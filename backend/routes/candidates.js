@@ -122,15 +122,36 @@ CRITICAL RULES:
   };
 }
 
-// GET /api/candidates
-router.get('/', async (req, res) => {
+const { authenticateToken } = require('../middleware/auth');
+
+// GET /api/candidates — List candidates (filtered by companyId or user role)
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const candidates = await db.all(`
-      SELECT c.*, j.title AS job_title, j.company_name
+    const { companyId } = req.query;
+    const user = req.user;
+
+    let query = `
+      SELECT c.*, j.title AS job_title, j.company_name, comp.name AS comp_name
       FROM candidates c
       LEFT JOIN jobs j ON c.job_id = j.id
-      ORDER BY c.called_at DESC
-    `);
+      LEFT JOIN companies comp ON c.company_id = comp.id
+    `;
+    const params = [];
+
+    if (companyId) {
+      query += ` WHERE c.company_id = ?`;
+      params.push(companyId);
+    } else if (user.role !== 'admin') {
+      // Account managers see candidates for their assigned companies or candidates they created
+      query += ` WHERE c.account_manager_id = ? OR c.company_id IN (
+        SELECT company_id FROM user_company_assignments WHERE user_id = ?
+      )`;
+      params.push(user.id, user.id);
+    }
+
+    query += ` ORDER BY c.called_at DESC`;
+
+    const candidates = await db.all(query, params);
     candidates.forEach(c => {
       if (c.call_health) {
         try { c.call_health = JSON.parse(c.call_health); } catch (_) {}
@@ -192,9 +213,11 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/candidates — create candidate + generate Maya Vapi config
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const { name, jobId, candidateBio } = req.body;
+    const user = req.user;
+
     if (!name || !name.trim()) return res.status(400).json({ error: 'Candidate name is required.' });
     if (!jobId)              return res.status(400).json({ error: 'Job ID is required. Save job config first.' });
 
@@ -219,8 +242,8 @@ router.post('/', async (req, res) => {
     }
 
     const { lastInsertRowid } = await db.run(
-      "INSERT INTO candidates (job_id, name, candidate_bio, status) VALUES (?, ?, ?, 'pending')",
-      [jobId, name.trim(), rawBio]
+      "INSERT INTO candidates (job_id, company_id, account_manager_id, name, candidate_bio, status) VALUES (?, ?, ?, ?, ?, 'pending')",
+      [jobId, job.company_id || 1, user.id, name.trim(), rawBio]
     );
     const candidateId = lastInsertRowid;
 

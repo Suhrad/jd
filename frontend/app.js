@@ -12,16 +12,344 @@ let currentModalReportData = null;
 let allCandidatesCache     = [];
 let currentTone            = 'warm';
 let currentQuestionsState  = [];
+let allCompaniesCache      = [];
+let currentCompanyId       = 1;
+let currentUser            = null;
+
+// ── Auth Helpers ───────────────────────────────────────────────────────────
+function getAuthToken() {
+  return localStorage.getItem('weekday_token');
+}
+
+function getAuthHeaders() {
+  const token = getAuthToken();
+  return token ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+}
+
+window.handleLogout = function() {
+  localStorage.removeItem('weekday_token');
+  localStorage.removeItem('weekday_user');
+  window.location.href = '/login.html';
+};
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   injectSvgGradients();
   setConnection('initializing', 'Initializing...');
+
+  // Auth check
+  const token = getAuthToken();
+  if (!token) {
+    window.location.href = '/login.html';
+    return;
+  }
+
+  const storedUser = localStorage.getItem('weekday_user');
+  if (storedUser) {
+    try {
+      currentUser = JSON.parse(storedUser);
+      const nameBadge = document.getElementById('userNameBadge');
+      if (nameBadge) nameBadge.innerText = `👤 ${currentUser.name} (${currentUser.role === 'admin' ? 'Admin' : 'AM'})`;
+      
+      const adminBtn = document.getElementById('adminTabBtn');
+      if (adminBtn && currentUser.role === 'admin') {
+        adminBtn.style.display = 'inline-flex';
+      }
+    } catch (_) {}
+  }
+
+  await loadCompanies();
   await loadLatestJob();
   await loadCandidates();
   await initVapi();
   setupJdAutoExtractor();
+
+  // Close company dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.combobox-wrapper')) {
+      const dropdown = document.getElementById('companyDropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    }
+  });
 });
+
+// ── Company & Role Selection Logic ───────────────────────────────────────
+async function loadCompanies() {
+  try {
+    const res = await fetch('/api/companies', { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (data.companies) {
+      allCompaniesCache = data.companies;
+      renderCompanyDropdown(allCompaniesCache);
+
+      if (allCompaniesCache.length > 0) {
+        selectCompany(allCompaniesCache[0].id, allCompaniesCache[0].name, allCompaniesCache[0].elevator_pitch);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load companies:', err);
+  }
+}
+
+window.showCompanyDropdown = function() {
+  const dropdown = document.getElementById('companyDropdown');
+  if (dropdown) {
+    renderCompanyDropdown(allCompaniesCache);
+    dropdown.style.display = 'block';
+  }
+};
+
+window.filterCompanyDropdown = function(query) {
+  const dropdown = document.getElementById('companyDropdown');
+  if (!dropdown) return;
+  const filtered = allCompaniesCache.filter(c => c.name.toLowerCase().includes(query.toLowerCase()));
+  renderCompanyDropdown(filtered);
+  dropdown.style.display = 'block';
+};
+
+function renderCompanyDropdown(companies) {
+  const dropdown = document.getElementById('companyDropdown');
+  if (!dropdown) return;
+  if (companies.length === 0) {
+    dropdown.innerHTML = '<div style="padding:10px 14px; font-size:13px; color:#94a3b8;">No companies found</div>';
+    return;
+  }
+
+  dropdown.innerHTML = companies.map(c => `
+    <div onclick="selectCompany(${c.id}, '${escapeQuotes(c.name)}', '${escapeQuotes(c.elevator_pitch || '')}')" style="padding:10px 14px; font-size:13px; color:#e2e8f0; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.05);" onmouseover="this.style.background='rgba(139,92,246,0.2)'" onmouseout="this.style.background='transparent'">
+      <strong style="color:white; display:block;">${c.name}</strong>
+      <span style="font-size:11px; color:#94a3b8;">${c.hq_location || 'Bangalore'} ${c.elevator_pitch ? '• ' + c.elevator_pitch.slice(0, 50) : ''}</span>
+    </div>
+  `).join('');
+}
+
+function escapeQuotes(str) {
+  return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+window.selectCompany = async function(id, name, pitch) {
+  currentCompanyId = id;
+  const input = document.getElementById('companyNameInput');
+  const hidden = document.getElementById('companyIdHidden');
+  const dropdown = document.getElementById('companyDropdown');
+  const pitchPill = document.getElementById('companyPitchPill');
+
+  if (input) input.value = name;
+  if (hidden) hidden.value = id;
+  if (dropdown) dropdown.style.display = 'none';
+
+  if (pitchPill) {
+    if (pitch) {
+      pitchPill.innerText = `🏢 ${name} — ${pitch}`;
+      pitchPill.style.display = 'block';
+    } else {
+      pitchPill.style.display = 'none';
+    }
+  }
+
+  await loadRolesForCompany(id);
+};
+
+async function loadRolesForCompany(companyId) {
+  const roleSelect = document.getElementById('roleTitleSelect');
+  if (!roleSelect) return;
+
+  try {
+    const res = await fetch(`/api/companies/${companyId}/roles`, { headers: getAuthHeaders() });
+    const data = await res.json();
+
+    let optionsHtml = '<option value="">-- Select Target Role Title --</option>';
+
+    if (data.roles && data.roles.length > 0) {
+      optionsHtml += data.roles.map(r => `
+        <option value="${escapeQuotes(r.title)}" ${r.hasSavedConfig ? 'style="color:#a7f3d0; font-weight:bold;"' : ''}>
+          ${r.title} ${r.hasSavedConfig ? ' (Saved Config ✓)' : ''}
+        </option>
+      `).join('');
+    }
+
+    optionsHtml += '<option value="__CREATE_NEW__">➕ Create New Custom Role...</option>';
+    roleSelect.innerHTML = optionsHtml;
+
+    if (data.roles && data.roles.length > 0) {
+      roleSelect.value = data.roles[0].title;
+      handleRoleSelect(data.roles[0].title);
+    } else {
+      document.getElementById('jobTitle').value = '';
+    }
+  } catch (err) {
+    console.error('Failed to load roles for company:', err);
+  }
+}
+
+window.handleRoleSelect = async function(roleValue) {
+  if (roleValue === '__CREATE_NEW__') {
+    const customRole = prompt('Enter new target role title (e.g. Lead ML Engineer):');
+    if (customRole && customRole.trim()) {
+      const roleTitle = customRole.trim();
+      const roleSelect = document.getElementById('roleTitleSelect');
+      const opt = document.createElement('option');
+      opt.value = roleTitle;
+      opt.innerText = roleTitle;
+      opt.selected = true;
+      roleSelect.appendChild(opt);
+
+      // Save role to company in backend
+      await fetch(`/api/companies/${currentCompanyId}/roles`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ roleTitle })
+      });
+
+      document.getElementById('jobTitle').value = roleTitle;
+    } else {
+      return;
+    }
+  } else {
+    document.getElementById('jobTitle').value = roleValue;
+  }
+
+  const roleTitle = document.getElementById('jobTitle').value;
+  if (!roleTitle) return;
+
+  // Auto-fill form parameters from saved job config for (Company, Role, AM)
+  try {
+    const res = await fetch(`/api/jobs/by-pair?companyId=${currentCompanyId}&roleTitle=${encodeURIComponent(roleTitle)}`, {
+      headers: getAuthHeaders()
+    });
+    const job = await res.json();
+    if (job) {
+      populateFormFromJob(job);
+      showToast(`Loaded saved config for ${roleTitle} @ ${document.getElementById('companyNameInput').value}`, 'success');
+    }
+  } catch (err) {
+    console.error('Failed to auto-fill for pair:', err);
+  }
+};
+
+function populateFormFromJob(job) {
+  currentJobId = job.id;
+  if (job.location) document.getElementById('location').value = job.location;
+  if (job.max_notice_days) document.getElementById('maxNoticeDays').value = job.max_notice_days;
+  if (job.tech_stack) document.getElementById('techStack').value = job.tech_stack;
+  if (job.target_cpa) document.getElementById('targetCpa').value = job.target_cpa;
+  if (job.tone) setTone(job.tone);
+  if (job.language_mode) document.getElementById('languageMode').value = job.language_mode;
+  if (job.voice_id) document.getElementById('voiceId').value = job.voice_id;
+  if (job.jd_text) document.getElementById('jdText').value = job.jd_text;
+
+  if (job.custom_questions && Array.isArray(job.custom_questions) && job.custom_questions.length > 0) {
+    currentQuestionsState = job.custom_questions;
+    renderQuestionCards(currentQuestionsState);
+  }
+}
+
+// ── Admin Panel Logic ─────────────────────────────────────────────────────
+window.openAdminPanel = async function() {
+  const modal = document.getElementById('adminPanelModal');
+  if (modal) modal.classList.remove('hidden');
+  await loadAdminUserList();
+};
+
+window.closeAdminPanel = function() {
+  const modal = document.getElementById('adminPanelModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+async function loadAdminUserList() {
+  const container = document.getElementById('adminUserList');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/admin/users', { headers: getAuthHeaders() });
+    const data = await res.json();
+
+    if (!data.users) return;
+
+    container.innerHTML = data.users.map(u => {
+      const assignedIds = (u.assignedCompanies || []).map(c => c.id);
+      return `
+        <div style="background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.1); padding:16px; border-radius:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div>
+              <strong style="color:white; font-size:14px;">${u.name}</strong>
+              <span style="font-size:12px; color:#94a3b8; margin-left:8px;">(${u.email})</span>
+              <span style="font-size:11px; background:rgba(168,85,247,0.2); color:#c084fc; padding:2px 8px; border-radius:4px; margin-left:8px; font-weight:600;">${u.role.toUpperCase()}</span>
+            </div>
+            <button onclick="saveAmAssignments(${u.id})" class="btn-primary" style="padding:6px 12px; font-size:12px;">Save Assignments</button>
+          </div>
+
+          <div style="font-size:12px; color:#cbd5e1; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+            <span>Assigned Companies (${assignedIds.length} / ${allCompaniesCache.length}):</span>
+            <label style="cursor:pointer; color:#a7f3d0; font-weight:600;">
+              <input type="checkbox" onchange="toggleSelectAllAmCompanies(${u.id}, this.checked)" /> Select All Companies
+            </label>
+          </div>
+
+          <div id="amCompGrid_${u.id}" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:6px; max-height:140px; overflow-y:auto; background:#0f172a; padding:10px; border-radius:8px;">
+            ${allCompaniesCache.map(c => `
+              <label style="font-size:11px; color:#cbd5e1; display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" class="am-comp-cb-${u.id}" value="${c.id}" ${assignedIds.includes(c.id) ? 'checked' : ''} />
+                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.name}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Failed to load admin user list:', err);
+  }
+}
+
+window.toggleSelectAllAmCompanies = function(userId, isChecked) {
+  const cbs = document.querySelectorAll(`.am-comp-cb-${userId}`);
+  cbs.forEach(cb => cb.checked = isChecked);
+};
+
+window.saveAmAssignments = async function(userId) {
+  const cbs = document.querySelectorAll(`.am-comp-cb-${userId}:checked`);
+  const companyIds = Array.from(cbs).map(cb => parseInt(cb.value));
+
+  try {
+    const res = await fetch(`/api/admin/users/${userId}/assignments`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ companyIds })
+    });
+    if (res.ok) {
+      showToast('✓ Assignments saved successfully!', 'success');
+      await loadAdminUserList();
+    }
+  } catch (err) {
+    showToast('Failed to save assignments.', 'error');
+  }
+};
+
+window.handleCreateUser = async function(e) {
+  e.preventDefault();
+  const name = document.getElementById('newAmName').value.trim();
+  const email = document.getElementById('newAmEmail').value.trim();
+  const password = document.getElementById('newAmPassword').value;
+
+  try {
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, email, password, role: 'account_manager' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create user');
+
+    showToast(`✓ Account Manager ${name} created!`, 'success');
+    document.getElementById('newAmName').value = '';
+    document.getElementById('newAmEmail').value = '';
+    document.getElementById('newAmPassword').value = '';
+    await loadAdminUserList();
+  } catch (err) {
+    showToast(`⚠️ ${err.message}`, 'error');
+  }
+};
 
 async function initVapi() {
   try {
@@ -356,7 +684,9 @@ window.addQuestionToTopic = function (tIdx) {
 
 // ── Save Job Config ────────────────────────────────────────────────────────
 window.saveJob = async function () {
-  const companyName   = document.getElementById('companyName').value.trim();
+  const companyNameInput = document.getElementById('companyNameInput');
+  const companyName   = companyNameInput ? companyNameInput.value.trim() : 'Weekday';
+  const companyId     = currentCompanyId || 1;
   const title         = document.getElementById('jobTitle').value.trim();
   const location      = document.getElementById('location').value.trim();
   const maxNoticeDays = document.getElementById('maxNoticeDays').value.trim();
@@ -366,7 +696,7 @@ window.saveJob = async function () {
   const voiceId       = document.getElementById('voiceId').value;
   let jdText          = document.getElementById('jdText').value.trim();
 
-  if (!title) { showToast('Please enter a Job Role Title.', 'error'); return; }
+  if (!title) { showToast('Please select a Target Role Title.', 'error'); return; }
   if (!jdText) {
     jdText = `Hiring for ${title} at ${companyName || 'Weekday'}. Requirements: ${techStack || 'Engineering'}.`;
     document.getElementById('jdText').value = jdText;
@@ -383,8 +713,9 @@ window.saveJob = async function () {
 
     const res = await fetch('/api/jobs', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
+        companyId,
         companyName,
         title,
         location,
@@ -677,7 +1008,7 @@ function updateProcessingSteps(attempt) {
 // ── Candidates List & Filtering ────────────────────────────────────────────
 window.loadCandidates = async function () {
   try {
-    const res          = await fetch('/api/candidates');
+    const res          = await fetch('/api/candidates', { headers: getAuthHeaders() });
     allCandidatesCache = await res.json();
     renderCandidates(allCandidatesCache);
   } catch (err) {

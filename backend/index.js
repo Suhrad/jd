@@ -14,6 +14,9 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // API Routes
+app.use('/api/auth',       require('./routes/auth'));
+app.use('/api/companies',  require('./routes/companies'));
+app.use('/api/admin',      require('./routes/admin'));
 app.use('/api/jobs',       require('./routes/jobs'));
 app.use('/api/candidates', require('./routes/candidates'));
 

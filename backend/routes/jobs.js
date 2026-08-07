@@ -8,23 +8,78 @@ const {
   parseJdToParameters
 } = require('../services/questionGenerator');
 
-// GET /api/jobs — list all jobs
-router.get('/', async (req, res) => {
+const { authenticateToken } = require('../middleware/auth');
+
+// GET /api/jobs — list jobs scoped by current user or company
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const jobs = await db.all('SELECT * FROM jobs ORDER BY created_at DESC');
+    const { companyId } = req.query;
+    const user = req.user;
+
+    let jobs;
+    if (companyId) {
+      jobs = await db.all(
+        'SELECT * FROM jobs WHERE company_id = ? AND created_by_user_id = ? ORDER BY updated_at DESC',
+        [companyId, user.id]
+      );
+    } else {
+      jobs = await db.all('SELECT * FROM jobs WHERE created_by_user_id = ? ORDER BY created_at DESC', [user.id]);
+    }
     res.json(jobs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/jobs/latest — get the most recent job config
-router.get('/latest', async (req, res) => {
+// GET /api/jobs/latest — get the most recent job config for current AM & company
+router.get('/latest', authenticateToken, async (req, res) => {
   try {
-    const job = await db.get('SELECT * FROM jobs ORDER BY updated_at DESC LIMIT 1');
+    const { companyId } = req.query;
+    const user = req.user;
+
+    let job;
+    if (companyId) {
+      job = await db.get(
+        'SELECT * FROM jobs WHERE company_id = ? AND created_by_user_id = ? ORDER BY updated_at DESC LIMIT 1',
+        [companyId, user.id]
+      );
+    } else {
+      job = await db.get('SELECT * FROM jobs WHERE created_by_user_id = ? ORDER BY updated_at DESC LIMIT 1', [user.id]);
+    }
+
+    if (!job) {
+      // Fallback to absolute latest
+      job = await db.get('SELECT * FROM jobs ORDER BY updated_at DESC LIMIT 1');
+    }
+
     if (job && job.custom_questions) {
       try { job.custom_questions = JSON.parse(job.custom_questions); } catch (_) {}
     }
+    res.json(job || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/jobs/by-pair — Get saved job config for a specific (Company, Role, AM)
+router.get('/by-pair', authenticateToken, async (req, res) => {
+  try {
+    const { companyId, roleTitle } = req.query;
+    const user = req.user;
+
+    if (!companyId || !roleTitle) {
+      return res.status(400).json({ error: 'Company ID and Role title are required.' });
+    }
+
+    const job = await db.get(
+      'SELECT * FROM jobs WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_by_user_id = ? LIMIT 1',
+      [companyId, roleTitle.trim(), user.id]
+    );
+
+    if (job && job.custom_questions) {
+      try { job.custom_questions = JSON.parse(job.custom_questions); } catch (_) {}
+    }
+
     res.json(job || null);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -113,10 +168,11 @@ router.post('/add-ai-question', async (req, res) => {
   }
 });
 
-// POST /api/jobs — save job configuration with all customized screening parameters
-router.post('/', async (req, res) => {
+// POST /api/jobs — save job configuration with all customized screening parameters (scoped by AM + Company + Role)
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const {
+      companyId,
       title,
       companyName,
       location,
@@ -132,35 +188,75 @@ router.post('/', async (req, res) => {
       requirements
     } = req.body;
 
+    const user = req.user;
+
     if (!title || !title.trim())   return res.status(400).json({ error: 'Job title is required.' });
-    if (!jdText || !jdText.trim()) return res.status(400).json({ error: 'Job description is required.' });
 
     const questionsJson = typeof customQuestions === 'string' 
       ? customQuestions 
       : JSON.stringify(customQuestions || []);
 
-    const { lastInsertRowid } = await db.run(`
-      INSERT INTO jobs (
-        title, company_name, location, max_notice_days, tech_stack, target_cpa,
-        tone, language_mode, duration_target, voice_id, custom_questions, jd_text, requirements
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      title.trim(),
-      (companyName || 'Weekday').trim(),
-      (location || 'Hybrid / Onsite').trim(),
-      (maxNoticeDays || '30').trim(),
-      (techStack || '').trim(),
-      (targetCpa || '').trim(),
-      (tone || 'warm').trim(),
-      (languageMode || 'en-IN').trim(),
-      parseInt(durationTarget) || 5,
-      (voiceId || 'shimmer').trim(),
-      questionsJson,
-      jdText.trim(),
-      (requirements || '').trim()
-    ]);
+    const cId = parseInt(companyId) || 1;
+    const cleanJd = (jdText || 'Standard screening JD').trim();
 
-    const savedJob = await db.get('SELECT * FROM jobs WHERE id = ?', [lastInsertRowid]);
+    // Check if an existing config exists for this AM + Company + Role
+    const existing = await db.get(
+      'SELECT id FROM jobs WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_by_user_id = ?',
+      [cId, title.trim(), user.id]
+    );
+
+    let jobId;
+    if (existing) {
+      await db.run(`
+        UPDATE jobs SET
+          company_name = ?, location = ?, max_notice_days = ?, tech_stack = ?,
+          target_cpa = ?, tone = ?, language_mode = ?, duration_target = ?,
+          voice_id = ?, custom_questions = ?, jd_text = ?, requirements = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [
+        (companyName || 'Weekday').trim(),
+        (location || 'Hybrid / Onsite').trim(),
+        (maxNoticeDays || '30').trim(),
+        (techStack || '').trim(),
+        (targetCpa || '').trim(),
+        (tone || 'warm').trim(),
+        (languageMode || 'en-IN').trim(),
+        parseInt(durationTarget) || 5,
+        (voiceId || 'shimmer').trim(),
+        questionsJson,
+        cleanJd,
+        (requirements || '').trim(),
+        existing.id
+      ]);
+      jobId = existing.id;
+    } else {
+      const { lastInsertRowid } = await db.run(`
+        INSERT INTO jobs (
+          company_id, created_by_user_id, title, company_name, location, max_notice_days, tech_stack, target_cpa,
+          tone, language_mode, duration_target, voice_id, custom_questions, jd_text, requirements
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        cId,
+        user.id,
+        title.trim(),
+        (companyName || 'Weekday').trim(),
+        (location || 'Hybrid / Onsite').trim(),
+        (maxNoticeDays || '30').trim(),
+        (techStack || '').trim(),
+        (targetCpa || '').trim(),
+        (tone || 'warm').trim(),
+        (languageMode || 'en-IN').trim(),
+        parseInt(durationTarget) || 5,
+        (voiceId || 'shimmer').trim(),
+        questionsJson,
+        cleanJd,
+        (requirements || '').trim()
+      ]);
+      jobId = lastInsertRowid;
+    }
+
+    const savedJob = await db.get('SELECT * FROM jobs WHERE id = ?', [jobId]);
     if (savedJob && savedJob.custom_questions) {
       try { savedJob.custom_questions = JSON.parse(savedJob.custom_questions); } catch (_) {}
     }
