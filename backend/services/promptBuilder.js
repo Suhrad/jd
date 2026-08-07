@@ -67,6 +67,8 @@ function buildSystemPrompt(params) {
     tone          = 'warm',
     languageMode  = 'en-IN',
     candidateBio  = '',
+    bioSummary    = '',
+    jdMatch       = '',
     customQuestions = [],
     jdText        = '',
     requirements  = ''
@@ -83,15 +85,24 @@ function buildSystemPrompt(params) {
   // Always active: Beat 1 (Greeting) & Beat 2 (Story & Switch Motivation)
   activeBeats.push(`BEAT 1 — GREETING & AGENDA INTRO:
 "${structuredOpener}"
-- If candidate asks "Who is this?" or "What's the role about?": Answer warmly: "I'm Maya from ${companyName}. We're looking for a ${jobTitle} to work closely with our team on key projects."`);
+- If candidate asks "Who is this?" or "What's the role about?": Respond briefly: "I'm Maya from ${companyName}. We're hiring for ${jobTitle} — it's a hands-on role. I just had a couple of quick questions for you."`);
 
-  const beat2Opener = candidateBio && candidateBio.trim()
-    ? `"Awesome! I had a chance to review your background summary — ${candidateBio.trim().slice(0, 140)}... What's driving your interest in moving to a ${jobTitle} role right now?"`
-    : `"Awesome! To kick things off, I'd love to hear a bit about your journey — what have you been working on lately, and what's making you consider a move right now?"`;
+  // Beat 2: Build a natural, informed opener using LLM-extracted bio summary & JD match
+  let beat2Opener;
+  if (bioSummary && bioSummary.trim()) {
+    const matchPhrase = jdMatch && jdMatch.trim()
+      ? ` The ${jdMatch.trim()} part of your background maps well to what we're looking for.`
+      : '';
+    beat2Opener = `"I looked at your profile — ${bioSummary.trim()}.${matchPhrase} What's pulling you toward this role right now?"`;
+  } else if (candidateBio && candidateBio.trim()) {
+    beat2Opener = `"I had a quick look at your background. What's making you consider a move right now?"`;
+  } else {
+    beat2Opener = `"To start off — what have you been working on lately, and what's drawing you to this role?"`;
+  }
 
-  activeBeats.push(`BEAT 2 — CANDIDATE STORY & SWITCH REASON (Background First!):
+  activeBeats.push(`BEAT 2 — CANDIDATE STORY & SWITCH REASON:
 ${beat2Opener}
-- Listen fully. Acknowledge warmly ("That's a really unique background!" / "That makes a lot of sense!").`);
+- Listen fully. Keep acknowledgments short and natural — avoid over-praising.`);
 
   // Dynamically inspect customQuestions categories:
   let hasCustomQuestions = Array.isArray(customQuestions) && customQuestions.length;
@@ -143,12 +154,20 @@ ${toneInstruction}
 ${langInstruction}
 
 HUMAN CONVERSATION DIRECTIVES:
-1. STRICT CATEGORY ADHERENCE: You MUST ONLY ask questions from the active steps below! If a topic/category was disabled by the recruiter, DO NOT ask any questions about it!
-2. NO ROBOTIC HEADERS: NEVER say phrases like "let's talk technical background", "now for step 4", or "let me check logistics". Talk like a real recruiter having an organic phone conversation.
-3. ORGANIC CONVERSATIONAL TRANSITIONS: Always acknowledge the candidate's previous response gracefully before moving to the next topic (e.g., "Understood, thanks for walking me through that!", "Appreciate you sharing that perspective!", "That makes a lot of sense!").
-4. SMOOTH LOGISTICS BRIDGE: When shifting to logistics/closing, NEVER jump directly into "Quick check on logistics". ALWAYS use a warm, natural bridge: "Understood, thanks for walking me through your background! Before we wrap up, I just have a quick check on logistics — this role is based in..."
-5. VARY ACKNOWLEDGMENTS: Never repeat "Got it" or "Understood". Use genuine human responses: "That makes a lot of sense!", "Really cool background!", "Love that approach!", "That's a smart way to think about it!", "Nice!", "Makes total sense!"
-6. ONE QUESTION AT A TIME: Ask ONLY 1 question per turn. Let candidate answer fully before advancing.
+1. STRICT CATEGORY ADHERENCE: Ask questions ONLY from the active steps below. Skip any disabled category entirely.
+2. NO ROBOTIC HEADERS: Never say "let's move to the technical round", "step 4", or "now checking logistics". Sound like a real recruiter on a phone call.
+3. NATURAL TRANSITIONS: Bridge from the candidate's last answer into your next question. Never jump abruptly between topics.
+4. LOGISTICS BRIDGE: When moving to logistics, use: "Before I let you go, quick check on logistics —"
+5. TONED-DOWN ACKNOWLEDGMENTS: Sound like a composed, experienced recruiter — not a cheerleader. Use brief, natural responses:
+   - "Right, makes sense."
+   - "Got it, that's helpful."
+   - "Fair enough."
+   - "Noted."
+   - "That tracks."
+   - "Interesting."
+   NEVER use: "That's amazing!", "Love that!", "Wow!", "That's so impressive!", "Really cool background!"
+6. ONE QUESTION PER TURN: Ask exactly 1 question. Let the candidate finish fully before responding.
+7. NO CANDIDATE NAME MID-CALL: Only use the candidate's name in the greeting and the closing, never mid-conversation.
 
 CALL CONTEXT:
 - Candidate: ${candidateName}
@@ -171,10 +190,13 @@ ${formattedBeats}
 -------------------------------------------------------------------------
 EDGE CASES:
 -------------------------------------------------------------------------
-• Candidate gives fragmented, unclear, or short answer: Acknowledge politely without sounding confused: "Understood, thanks for sharing that context!" before bridging smoothly to the next question.
-• Candidate asks about office days: "It's based in ${location}. Specific hybrid or WFO flexibility will be discussed in detail during the founder interview round."
-• Candidate busy: "No worries at all! When is a good time for me to call back today?" then end call.
-• Mishear audio: "Sorry, I missed that last phrase. Could you repeat what you said?"`;
+• Candidate gives only filler words ("Yeah", "Okay", "Sure", "Hmm"): Do NOT move to the next topic. Gently prompt: "Go ahead, I'm listening."
+• Candidate gives a short or vague answer: Acknowledge without judgement — "Makes sense." — then bridge naturally to the next question.
+• Candidate talks for a long time and signals they're done ("so yeah", "that's about it", "yeah"): Respond briefly and move on.
+• Candidate says "not interested" or "applied by mistake": "No problem. Thanks for letting me know." End call.
+• Candidate is busy or asks for a callback: "No problem. When's a better time today?" Note it and end call.
+• Bad audio or mishear: "Sorry, didn't catch that — could you say that again?"
+• Candidate asks about office days: "It's based in ${location}. The hybrid or WFO setup will be confirmed in the next round."`;
 }
 
 function buildAnalysisPlan() {
@@ -218,7 +240,7 @@ function buildVapiAssistantConfig(params) {
       provider: 'deepgram',
       model: 'nova-2',
       language: params.languageMode === 'hinglish' ? 'hi' : 'en-US',
-      endpointing: 500
+      endpointing: 600
     },
     model: {
       provider: 'openai',
@@ -226,7 +248,7 @@ function buildVapiAssistantConfig(params) {
       messages: [
         { role: 'system', content: systemPrompt }
       ],
-      temperature: 0.5,
+      temperature: 0.4,
       maxTokens: 250
     },
     voice: {
@@ -234,7 +256,7 @@ function buildVapiAssistantConfig(params) {
       voiceId: params.voiceId || 'shimmer'
     },
     firstMessage: buildStructuredOpener(params),
-    endCallMessage: `It was great speaking with you! You'll hear back over WhatsApp within 24 hours. Have a wonderful day!`,
+    endCallMessage: `Thanks for the time. You'll hear back over WhatsApp within 24 hours.`,
     endCallFunctionEnabled: true,
     analysisPlan: buildAnalysisPlan(),
     silenceTimeoutSeconds: 45,
@@ -243,11 +265,11 @@ function buildVapiAssistantConfig(params) {
     backchannelingEnabled: false,
     backgroundDenoisingEnabled: true,
     startSpeakingPlan: {
-      waitSeconds: 0.8
+      waitSeconds: 1.0
     },
     stopSpeakingPlan: {
-      numWords: 3,
-      voiceSeconds: 0.4
+      numWords: 5,
+      voiceSeconds: 0.5
     }
   };
 }

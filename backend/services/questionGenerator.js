@@ -400,10 +400,65 @@ Return JSON ONLY.`
   }
 }
 
+/**
+ * Pre-call LLM Bio Extractor.
+ * Given raw resume text + JD, returns a punchy 1-line bio summary and 1 specific JD match point.
+ * Used to build a natural, informed opener for Maya instead of slicing raw resume text.
+ */
+async function extractCandidateBio(resumeText, jdText) {
+  const fallback = { bio_summary: '', jd_match: '' };
+
+  if (!resumeText || !resumeText.trim()) return fallback;
+
+  const groqKey   = process.env.GROQ_API_KEY;
+  const openAiKey = process.env.OPENAI_API_KEY;
+  const apiKey    = groqKey || openAiKey;
+  const endpoint  = groqKey ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+  const model     = groqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+
+  if (!apiKey) return fallback;
+
+  try {
+    const response = await axios.post(
+      endpoint,
+      {
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a recruiter's assistant. Given a raw resume and a job description, extract exactly two things and return them as JSON:
+1. "bio_summary": A single punchy recruiter-style sentence summarising the candidate's background. Max 18 words. Factual, no adjectives or hype. Example: "Founding COO at Weekday, ex-Titan Capital analyst, CS and ML background."
+2. "jd_match": One specific thing from the resume that directly maps to the JD. Max 12 words. Example: "operational scaling and 0-to-1 product experience". If no clear match, return empty string "".
+
+Return JSON only: { "bio_summary": "...", "jd_match": "..." }`
+          },
+          {
+            role: 'user',
+            content: `RESUME:\n${resumeText.slice(0, 2000)}\n\nJOB DESCRIPTION:\n${(jdText || '').slice(0, 800)}`
+          }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2
+      },
+      { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 8000 }
+    );
+
+    const parsed = JSON.parse(response.data.choices[0].message.content);
+    return {
+      bio_summary: (parsed.bio_summary || '').trim().slice(0, 120),
+      jd_match:    (parsed.jd_match    || '').trim().slice(0, 80)
+    };
+  } catch (err) {
+    console.warn('[extractCandidateBio] LLM extraction failed, using fallback:', err.message);
+    return fallback;
+  }
+}
+
 module.exports = {
   generateInterviewQuestions,
   generateFallbackQuestions,
   refineSingleCategoryQuestion,
   generateNewCategoryCard,
-  parseJdToParameters
+  parseJdToParameters,
+  extractCandidateBio
 };

@@ -3,6 +3,7 @@ const router  = express.Router();
 const axios   = require('axios');
 const db      = require('../db/database');
 const { buildVapiAssistantConfig } = require('../services/promptBuilder');
+const { extractCandidateBio }      = require('../services/questionGenerator');
 
 /**
  * Fallback LLM Evaluator using Groq / Llama-3.3-70B when Vapi analysis is missing.
@@ -209,11 +210,17 @@ router.post('/', async (req, res) => {
       } catch (_) {}
     }
 
-    const bioText = (candidateBio || '').trim();
+    const rawBio = (candidateBio || '').trim();
+
+    // Pre-call LLM bio extraction: convert raw resume text into a punchy summary + JD match point
+    let extractedBio = { bio_summary: '', jd_match: '' };
+    if (rawBio) {
+      extractedBio = await extractCandidateBio(rawBio, job.jd_text || '');
+    }
 
     const { lastInsertRowid } = await db.run(
       "INSERT INTO candidates (job_id, name, candidate_bio, status) VALUES (?, ?, ?, 'pending')",
-      [jobId, name.trim(), bioText]
+      [jobId, name.trim(), rawBio]
     );
     const candidateId = lastInsertRowid;
 
@@ -228,7 +235,9 @@ router.post('/', async (req, res) => {
       targetCpa:       job.target_cpa || 'Negotiable',
       tone:            job.tone || 'warm',
       languageMode:    job.language_mode || 'en-IN',
-      candidateBio:    bioText,
+      candidateBio:    rawBio,
+      bioSummary:      extractedBio.bio_summary,
+      jdMatch:         extractedBio.jd_match,
       voiceId:         job.voice_id || 'shimmer',
       customQuestions: customQuestions,
       jdText:          job.jd_text,
