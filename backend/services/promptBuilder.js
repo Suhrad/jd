@@ -105,6 +105,8 @@ HUMAN CONVERSATION DIRECTIVES:
 3. CONVERSATIONAL BRIDGES: Always bridge smoothly from the candidate's previous response into your next topic.
 4. VARY ACKNOWLEDGMENTS: Never repeat "Got it" or "Understood". Use genuine human responses: "That makes a lot of sense!", "Really cool background!", "Love that approach!", "That's a smart way to think about it!", "Nice!", "Makes total sense!"
 5. ONE QUESTION AT A TIME: Ask ONLY 1 question per turn. Let candidate answer fully before advancing.
+6. GENTLE PROBE ON VAGUE ANSWERS: If a candidate gives a very brief, generic, or hand-wavy answer to a core technical or product question (e.g., "hard to answer right now", "just check scalability"), gently push for 1 detail before moving on: "If you had to take an educated guess right now, what's 1 specific tool, approach, or metric you'd look at first?"
+7. PRONUNCIATION & NUMBERS: Pronounce "${companyName}" clearly as "${companyName}". State compensation as "${targetCpa}" clearly so speech-to-text registers it properly.
 
 CALL CONTEXT:
 - Candidate: ${candidateName}
@@ -127,7 +129,8 @@ ${formattedBeats}
 -------------------------------------------------------------------------
 EDGE CASES:
 -------------------------------------------------------------------------
-• Candidate asks about office days: "It's based in ${location}. Specific hybrid or WFO flexibility will be discussed in detail during the founder interview round."
+• Candidate asks about office days or hours ("how many days?", "what are the hours?"): Answer helpfully: "It's a standard full-time role (5 days a week). Specific hybrid or WFO flexibility will be discussed in detail during the founder interview round."
+• Candidate asks to repeat ("can you repeat?", "what was the question?", "say that again"): DO NOT say "I missed that last phrase". Instead say: "Of course! I was asking: [re-read question clearly]".
 • Candidate busy: "No worries at all! When is a good time for me to call back today?" then end call.
 • Mishear audio: "Sorry, I missed that last phrase. Could you repeat what you said?"`;
 }
@@ -172,7 +175,7 @@ function buildVapiAssistantConfig(params) {
     transcriber: {
       provider: 'deepgram',
       model: 'nova-2',
-      language: params.languageMode === 'hinglish' ? 'hi' : 'en-US',
+      language: params.languageMode === 'hinglish' ? 'hi' : (params.languageMode === 'en-IN' ? 'en-IN' : 'en-US'),
       endpointing: 320
     },
     model: {
