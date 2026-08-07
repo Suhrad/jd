@@ -17,31 +17,73 @@ const LANGUAGE_DIRECTIVES = {
   'en-UK': `LANGUAGE & ACCENT: UK Professional English. Use polite, polished British English phrasing.`
 };
 
-function buildSystemPrompt({
-  candidateName = 'Candidate',
+function buildStructuredOpener({
+  candidateName = 'there',
   companyName   = 'Weekday',
-  jobTitle      = 'Software Engineer',
-  location      = 'Bangalore',
-  maxNoticeDays = '30',
-  techStack     = 'Software Engineering',
-  targetCpa     = 'Competitive',
-  tone          = 'warm',
-  languageMode  = 'en-IN',
-  candidateBio  = '',
-  customQuestions = [],
-  jdText        = '',
-  requirements  = ''
+  jobTitle      = 'open',
+  customQuestions = []
 }) {
+  const enabledTopics = Array.isArray(customQuestions) 
+    ? customQuestions.filter(t => t.enabled !== false && Array.isArray(t.questions) && t.questions[0])
+    : [];
+
+  const agendaItems = ['your background'];
+  enabledTopics.forEach(t => {
+    const cat = (t.category || '').toLowerCase();
+    if (cat.includes('technical') || cat.includes('architecture')) agendaItems.push('core technical focus');
+    else if (cat.includes('ownership') || cat.includes('startup') || cat.includes('leadership')) agendaItems.push('ownership & execution');
+    else if (cat.includes('product') || cat.includes('business')) agendaItems.push('product instincts');
+    else if (cat.includes('academic') || cat.includes('college')) agendaItems.push('academic background');
+    else if (cat.includes('problem') || cat.includes('company')) agendaItems.push('problem solving');
+    else if (!cat.includes('logistics') && !cat.includes('career')) agendaItems.push(t.category.toLowerCase().slice(0, 25));
+  });
+
+  const uniqueAgenda = Array.from(new Set(agendaItems));
+  let agendaTopicsText = 'your background, core role focus';
+  if (uniqueAgenda.length === 1) {
+    agendaTopicsText = 'your background';
+  } else if (uniqueAgenda.length === 2) {
+    agendaTopicsText = `${uniqueAgenda[0]} and ${uniqueAgenda[1]}`;
+  } else if (uniqueAgenda.length >= 3) {
+    const mainParts = uniqueAgenda.slice(0, 3);
+    agendaTopicsText = `${mainParts.join(', ')}`;
+  }
+  agendaTopicsText += ', and role logistics';
+
+  const estMins = enabledTopics.length <= 2 ? '3-minute' : '4-minute';
+
+  return `Hi ${candidateName}! This is Maya calling from ${companyName} regarding the ${jobTitle} position. I'm reaching out for a quick ${estMins} chat where we'll cover ${agendaTopicsText}. Do you have a few minutes to talk right now?`;
+}
+
+function buildSystemPrompt(params) {
+  const {
+    candidateName = 'Candidate',
+    companyName   = 'Weekday',
+    jobTitle      = 'Software Engineer',
+    location      = 'Bangalore',
+    maxNoticeDays = '30',
+    techStack     = 'Software Engineering',
+    targetCpa     = 'Competitive',
+    tone          = 'warm',
+    languageMode  = 'en-IN',
+    candidateBio  = '',
+    customQuestions = [],
+    jdText        = '',
+    requirements  = ''
+  } = params;
+
   const toneInstruction = TONE_INSTRUCTIONS[tone] || TONE_INSTRUCTIONS.warm;
   const langInstruction = LANGUAGE_DIRECTIVES[languageMode] || LANGUAGE_DIRECTIVES['en-IN'];
+
+  const structuredOpener = buildStructuredOpener(params);
 
   // Build active Beats based ONLY on enabled categories!
   const activeBeats = [];
 
   // Always active: Beat 1 (Greeting) & Beat 2 (Story & Switch Motivation)
-  activeBeats.push(`BEAT 1 — GREETING & ROLE INTRO:
-"Hi ${candidateName}! This is Maya calling from ${companyName} about the ${jobTitle} position. Is now a good time for a quick 3-minute chat?"
-- If candidate asks "Who is this?" or "What's the role about?": Answer warmly: "I'm Maya from ${companyName}. We're looking for a ${jobTitle} to work closely with our team on key technology and growth projects."`);
+  activeBeats.push(`BEAT 1 — GREETING & AGENDA INTRO:
+"${structuredOpener}"
+- If candidate asks "Who is this?" or "What's the role about?": Answer warmly: "I'm Maya from ${companyName}. We're looking for a ${jobTitle} to work closely with our team on key projects."`);
 
   const beat2Opener = candidateBio && candidateBio.trim()
     ? `"Awesome! I had a chance to review your background summary — ${candidateBio.trim().slice(0, 140)}... What's driving your interest in moving to a ${jobTitle} role right now?"`
@@ -190,7 +232,7 @@ function buildVapiAssistantConfig(params) {
       provider: 'openai',
       voiceId: params.voiceId || 'shimmer'
     },
-    firstMessage: `Hi ${params.candidateName || 'there'}! This is Maya calling from ${params.companyName || 'Weekday'} about the ${params.jobTitle || 'open'} position. Is now a good time for a quick chat?`,
+    firstMessage: buildStructuredOpener(params),
     endCallMessage: `It was great speaking with you! You'll hear back over WhatsApp within 24 hours. Have a wonderful day!`,
     endCallFunctionEnabled: true,
     analysisPlan: buildAnalysisPlan(),
