@@ -32,8 +32,25 @@ async function initDb() {
 
   if (process.env.DATABASE_URL) {
     isPg = true;
+
+    let connStr = process.env.DATABASE_URL;
+
+    // Supabase direct connections (db.*.supabase.co:5432) are IPv6-only.
+    // Render does not support outbound IPv6, so we auto-redirect to the
+    // Supabase connection pooler (aws-0-*.pooler.supabase.com:6543) which is IPv4.
+    const directMatch = connStr.match(/db\.([\w]+)\.supabase\.co/);
+    if (directMatch) {
+      const projectRef = directMatch[1];
+      // Extract user/password from the connection string
+      const urlParsed = new URL(connStr);
+      const password = urlParsed.password;
+      const region = 'ap-south-1'; // Mumbai - your Supabase project region
+      connStr = `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:6543/postgres`;
+      console.log('[DB] Auto-redirected to Supabase connection pooler (IPv4 compatible)');
+    }
+
     pgPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString: connStr,
       ssl: { rejectUnauthorized: false },
       family: 4
     });
