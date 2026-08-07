@@ -126,7 +126,8 @@ Bridge & Prompt: "Nice! Since this ${jobTitle} role at ${companyName} is super h
 
   // Always active: Logistics & Closing
   activeBeats.push(`BEAT — LOGISTICS & COMPENSATION ALIGNMENT:
-Bridge & Prompt: "Understood, thanks for walking me through your background! Before we wrap up, I just have a quick check on logistics — this role is based in ${location} with notice under ${maxNoticeDays} days and target budget around ${targetCpa}. Does that setup and timing fit what you're looking for?"`);
+Bridge & Prompt: "Understood, thanks for walking me through your background! Before we wrap up, I just have a quick check on logistics — this role is based in ${location} with notice under ${maxNoticeDays} days and target budget around ${targetCpa}. Does that setup and timing fit what you're looking for?"
+- IMPORTANT: Listen fully to candidate's answer ("Yes", "Fits for me", "No", etc.). DO NOT end the call until candidate responds!`);
 
   activeBeats.push(`BEAT — CANDIDATE Q&A AND WARM CLOSING:
 Prompt: "Perfect! Do you have any quick questions for me about the team, role, or office setup before I pass your profile to the team?"
@@ -217,7 +218,7 @@ function buildVapiAssistantConfig(params) {
       provider: 'deepgram',
       model: 'nova-2',
       language: params.languageMode === 'hinglish' ? 'hi' : 'en-US',
-      endpointing: 320
+      endpointing: 500
     },
     model: {
       provider: 'openai',
@@ -226,7 +227,7 @@ function buildVapiAssistantConfig(params) {
         { role: 'system', content: systemPrompt }
       ],
       temperature: 0.5,
-      maxTokens: 140
+      maxTokens: 250
     },
     voice: {
       provider: 'openai',
@@ -236,17 +237,17 @@ function buildVapiAssistantConfig(params) {
     endCallMessage: `It was great speaking with you! You'll hear back over WhatsApp within 24 hours. Have a wonderful day!`,
     endCallFunctionEnabled: true,
     analysisPlan: buildAnalysisPlan(),
-    silenceTimeoutSeconds: 30,
+    silenceTimeoutSeconds: 45,
     maxDurationSeconds: 480,
     backgroundSound: 'off',
     backchannelingEnabled: false,
     backgroundDenoisingEnabled: true,
     startSpeakingPlan: {
-      waitSeconds: 0.5
+      waitSeconds: 0.8
     },
     stopSpeakingPlan: {
       numWords: 3,
-      voiceSeconds: 0.3
+      voiceSeconds: 0.4
     }
   };
 }
