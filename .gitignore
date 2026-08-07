@@ -1,0 +1,4 @@
+node_modules/
+.env
+data/interviews.db
+.DS_Store

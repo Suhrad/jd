@@ -1,0 +1,210 @@
+/**
+ * Master System Prompt Builder implementing Maya's Organic Human Recruiter Flow
+ * Multi-Language Support (Hinglish / Indian Professional / US / UK) & Strict Enable Category Checkbox filtering.
+ */
+
+const TONE_INSTRUCTIONS = {
+  warm:      `TONE: Warm, genuine, and consultative. Sound like a real human recruiter who actually cares. Be encouraging and make the candidate feel comfortable.`,
+  rigorous:  `TONE: Direct and professional. No small talk. Ask sharp, fact-focused questions and gently push back on vague answers.`,
+  executive: `TONE: Polished and strategic. Focus on business impact, leadership decisions, and high-level thinking.`,
+  startup:   `TONE: Energetic and enthusiastic. Test hunger, speed of thinking, ownership mindset, and excitement for a fast-paced environment.`
+};
+
+const LANGUAGE_DIRECTIVES = {
+  'en-IN': `LANGUAGE & ACCENT: Indian Professional English / Hinglish Friendly. You naturally understand and respond to Indian English phrasing and occasional conversational Hindi/Hinglish terms (e.g., "ha", "notice period", "CTC").`,
+  'hinglish': `LANGUAGE & ACCENT: Natural Indian Hinglish Code-Switching. You naturally blend professional English with occasional warm conversational Hinglish words (e.g., "samajh gaya", "ha", "flexible hai"). Keep responses professional yet extremely approachable.`,
+  'en-US': `LANGUAGE & ACCENT: US Professional English. Use crisp, clear American English phrasing.`,
+  'en-UK': `LANGUAGE & ACCENT: UK Professional English. Use polite, polished British English phrasing.`
+};
+
+function buildSystemPrompt({
+  candidateName = 'Candidate',
+  companyName   = 'Weekday',
+  jobTitle      = 'Software Engineer',
+  location      = 'Bangalore',
+  maxNoticeDays = '30',
+  techStack     = 'Software Engineering',
+  targetCpa     = 'Competitive',
+  tone          = 'warm',
+  languageMode  = 'en-IN',
+  candidateBio  = '',
+  customQuestions = [],
+  jdText        = '',
+  requirements  = ''
+}) {
+  const toneInstruction = TONE_INSTRUCTIONS[tone] || TONE_INSTRUCTIONS.warm;
+  const langInstruction = LANGUAGE_DIRECTIVES[languageMode] || LANGUAGE_DIRECTIVES['en-IN'];
+
+  // Build active Beats based ONLY on enabled categories!
+  const activeBeats = [];
+
+  // Always active: Beat 1 (Greeting) & Beat 2 (Story & Switch Motivation)
+  activeBeats.push(`BEAT 1 — GREETING & ROLE INTRO:
+"Hi ${candidateName}! This is Maya calling from ${companyName} about the ${jobTitle} position. Is now a good time for a quick 3-minute chat?"
+- If candidate asks "Who is this?" or "What's the role about?": Answer warmly: "I'm Maya from ${companyName}. We're looking for a ${jobTitle} to work closely with our team on key technology and growth projects."`);
+
+  const beat2Opener = candidateBio && candidateBio.trim()
+    ? `"Awesome! I had a chance to review your background summary — ${candidateBio.trim().slice(0, 140)}... What's driving your interest in moving to a ${jobTitle} role right now?"`
+    : `"Awesome! To kick things off, I'd love to hear a bit about your journey — what have you been working on lately, and what's making you consider a move right now?"`;
+
+  activeBeats.push(`BEAT 2 — CANDIDATE STORY & SWITCH REASON (Background First!):
+${beat2Opener}
+- Listen fully. Acknowledge warmly ("That's a really unique background!" / "That makes a lot of sense!").`);
+
+  // Dynamically inspect customQuestions categories:
+  let hasCustomQuestions = Array.isArray(customQuestions) && customQuestions.length;
+
+  if (hasCustomQuestions) {
+    customQuestions.forEach(topic => {
+      if (topic.enabled === false || !Array.isArray(topic.questions) || !topic.questions[0]) {
+        return; // Skip disabled category
+      }
+
+      const q = topic.questions[0];
+      const cat = topic.category.toLowerCase();
+
+      if (cat.includes('technical') || cat.includes('architecture')) {
+        activeBeats.push(`BEAT — TECHNICAL & SYSTEM ARCHITECTURE:
+Bridge & Prompt: "Nice! Since this ${jobTitle} role at ${companyName} is hands-on — ${q}"`);
+      } else if (cat.includes('ownership') || cat.includes('startup') || cat.includes('problem')) {
+        activeBeats.push(`BEAT — STARTUP OWNERSHIP & AMBIGUITY:
+Bridge & Prompt: "At ${companyName}, founder projects move fast with high ambiguity. ${q}"`);
+      } else if (cat.includes('academics') || cat.includes('college')) {
+        activeBeats.push(`BEAT — ACADEMICS & EARLY BACKGROUND:
+Bridge & Prompt: "Looking at your foundational experience — ${q}"`);
+      } else if (cat.includes('product') || cat.includes('business')) {
+        activeBeats.push(`BEAT — PRODUCT & BUSINESS INSTINCTS:
+Bridge & Prompt: "From a product standpoint — ${q}"`);
+      }
+    });
+  } else {
+    activeBeats.push(`BEAT — TECHNICAL DEEP-DIVE:
+Bridge & Prompt: "Nice! Since this ${jobTitle} role at ${companyName} is super hands-on — Could you walk me through 1 core production system or project you recently built using ${techStack}?"`);
+  }
+
+  // Always active: Logistics & Closing
+  activeBeats.push(`BEAT — LOGISTICS & COMPENSATION ALIGNMENT:
+Prompt: "Makes total sense! Quick check on logistics — this role is based in ${location} with notice under ${maxNoticeDays} days and target budget around ${targetCpa}. Does that setup and timing fit what you're looking for?"`);
+
+  activeBeats.push(`BEAT — CANDIDATE Q&A AND WARM CLOSING:
+Prompt: "Perfect! Do you have any quick questions for me about the team, role, or office setup before I pass your profile to the team?"
+- If candidate asks a question (e.g. office days, team size), answer helpfully in 1-2 short sentences.
+- Then close warmly: "I'll share your details with the ${companyName} team right away. You'll get an update over WhatsApp within 24 hours with next steps. It was awesome speaking with you, ${candidateName} — have a great rest of your day!"
+- Immediately call end_call function.`);
+
+  const formattedBeats = activeBeats.map((beat, idx) => `STEP ${idx + 1}:\n${beat}`).join('\n\n');
+
+  return `YOU ARE: "Maya", a senior human recruiter calling on behalf of ${companyName}.
+
+${toneInstruction}
+${langInstruction}
+
+HUMAN CONVERSATION DIRECTIVES:
+1. STRICT CATEGORY ADHERENCE: You MUST ONLY ask questions from the active steps below! If a topic/category was disabled by the recruiter, DO NOT ask any questions about it!
+2. NO ROBOTIC HEADERS: NEVER say phrases like "let's talk technical background", "now for step 4", or "let me check logistics". Talk like a real recruiter having an organic phone conversation.
+3. CONVERSATIONAL BRIDGES: Always bridge smoothly from the candidate's previous response into your next topic.
+4. VARY ACKNOWLEDGMENTS: Never repeat "Got it" or "Understood". Use genuine human responses: "That makes a lot of sense!", "Really cool background!", "Love that approach!", "That's a smart way to think about it!", "Nice!", "Makes total sense!"
+5. ONE QUESTION AT A TIME: Ask ONLY 1 question per turn. Let candidate answer fully before advancing.
+
+CALL CONTEXT:
+- Candidate: ${candidateName}
+- Company: ${companyName}
+- Role: ${jobTitle}
+- Location: ${location}
+- Max Notice: ${maxNoticeDays} days
+- Tech Stack: ${techStack}
+- Budget: ${targetCpa}
+
+JOB DESCRIPTION:
+${jdText}
+${requirements ? '\nADDITIONAL REQUIREMENTS:\n' + requirements : ''}
+
+-------------------------------------------------------------------------
+ACTIVE CONVERSATION STEPS (ASK ONLY THESE ACTIVE TOPICS IN ORDER):
+-------------------------------------------------------------------------
+${formattedBeats}
+
+-------------------------------------------------------------------------
+EDGE CASES:
+-------------------------------------------------------------------------
+• Candidate asks about office days: "It's based in ${location}. Specific hybrid or WFO flexibility will be discussed in detail during the founder interview round."
+• Candidate busy: "No worries at all! When is a good time for me to call back today?" then end call.
+• Mishear audio: "Sorry, I missed that last phrase. Could you repeat what you said?"`;
+}
+
+function buildAnalysisPlan() {
+  return {
+    summaryPrompt: `Provide a concise 3-sentence recruiter assessment of the candidate:
+1. Technical fit and relevant experience depth.
+2. Logistics alignment — notice period, location comfort, and compensation.
+3. Switch motivation and overall hiring recommendation.`,
+
+    structuredDataPrompt: `Analyze this interview transcript carefully and extract all candidate screening data in the required JSON format.`,
+
+    structuredDataSchema: {
+      type: 'object',
+      properties: {
+        overallScore:           { type: 'number',  description: 'Overall suitability score 1–10.' },
+        technicalScore:         { type: 'number',  description: 'Technical skills and depth score 1–10.' },
+        communicationScore:     { type: 'number',  description: 'Communication clarity score 1–10.' },
+        noticePeriodAcceptable: { type: 'boolean', description: 'True if notice period is within limit or negotiable.' },
+        locationAcceptable:     { type: 'boolean', description: 'True if candidate is comfortable with the location.' },
+        compensationAligned:    { type: 'boolean', description: 'True if CTC expectations align with budget.' },
+        switchMotivation:       { type: 'string',  description: 'Candidate\'s reason for looking to switch jobs.' },
+        keyHighlights:          { type: 'array', items: { type: 'string' }, description: '2–4 key strengths or highlights.' },
+        concerns:               { type: 'array', items: { type: 'string' }, description: '0–3 concerns or dealbreakers.' },
+        hiringRecommendation:   { type: 'string', enum: ['Strong Yes', 'Yes', 'Maybe', 'No'] },
+        summary:                { type: 'string',  description: 'Executive summary for the hiring manager.' }
+      },
+      required: [
+        'overallScore', 'technicalScore', 'communicationScore', 'noticePeriodAcceptable',
+        'locationAcceptable', 'compensationAligned', 'switchMotivation', 'keyHighlights',
+        'concerns', 'hiringRecommendation', 'summary'
+      ]
+    }
+  };
+}
+
+function buildVapiAssistantConfig(params) {
+  const systemPrompt = buildSystemPrompt(params);
+
+  return {
+    transcriber: {
+      provider: 'deepgram',
+      model: 'nova-2',
+      language: params.languageMode === 'hinglish' ? 'hi' : 'en-US',
+      endpointing: 320
+    },
+    model: {
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt }
+      ],
+      temperature: 0.5,
+      maxTokens: 140
+    },
+    voice: {
+      provider: 'openai',
+      voiceId: params.voiceId || 'shimmer'
+    },
+    firstMessage: `Hi ${params.candidateName || 'there'}! This is Maya calling from ${params.companyName || 'Weekday'} about the ${params.jobTitle || 'open'} position. Is now a good time for a quick chat?`,
+    endCallMessage: `It was great speaking with you! You'll hear back over WhatsApp within 24 hours. Have a wonderful day!`,
+    endCallFunctionEnabled: true,
+    analysisPlan: buildAnalysisPlan(),
+    silenceTimeoutSeconds: 30,
+    maxDurationSeconds: 480,
+    backgroundSound: 'off',
+    backchannelingEnabled: false,
+    backgroundDenoisingEnabled: true,
+    startSpeakingPlan: {
+      waitSeconds: 0.5
+    },
+    stopSpeakingPlan: {
+      numWords: 3,
+      voiceSeconds: 0.3
+    }
+  };
+}
+
+module.exports = { buildVapiAssistantConfig };

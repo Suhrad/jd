@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WeekdayAI — Recruiter Copilot &amp; Screening Platform</title>
+  <meta name="description" content="Enterprise AI Voice Recruiter Architect with hyper-customizable recruiter personalities, AI question generation, and dealbreaker screening." />
+  
+  <!-- Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Background Grid -->
+  <div class="bg-grid"></div>
+
+  <!-- ========== HEADER & STEP TABS ========== -->
+  <header id="appHeader">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div class="logo-brand">
+          <span class="logo-text">WeekdayAI</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs (3 Middle Steps) -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" id="tabBtn1" onclick="switchTab(1)">
+        <span class="tab-num">1</span>
+        <span>Role &amp; Persona</span>
+      </button>
+      <button class="nav-tab" id="tabBtn2" onclick="switchTab(2)">
+        <span class="tab-num">2</span>
+        <span>AI Question Architect</span>
+      </button>
+      <button class="nav-tab" id="tabBtn3" onclick="switchTab(3)">
+        <span class="tab-num">3</span>
+        <span>Live Call Stage</span>
+      </button>
+    </nav>
+
+    <div class="header-right">
+      <button class="nav-tab hub-tab" id="tabBtn4" onclick="switchTab(4)">
+        <span>Candidate Hub</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ========== MAIN WORKSPACE CONTAINER ========== -->
+  <div class="main-container">
+
+    <!-- =========================================================================
+         TAB 1: ROLE & RECRUITER PERSONA SETUP
+         ========================================================================= -->
+    <section class="tab-content active" id="tabView1">
+      <div class="wizard-card glass">
+        
+        <div class="wizard-header">
+          <div>
+            <h2>Step 1: Role Parameters &amp; Recruiter Persona</h2>
+            <p class="wizard-sub">Define hiring requirements, target dealbreakers, and Maya's tone of voice</p>
+          </div>
+          <button class="btn-primary" onclick="saveAndNext(1)">
+            Save &amp; Continue to AI Questions &rarr;
+          </button>
+        </div>
+
+        <!-- Recruiter Tone Selection Cards -->
+        <div class="form-section">
+          <label class="section-label">🎭 Recruiter Screening Personality &amp; Tone</label>
+          <div class="tone-cards-grid">
+            <div class="tone-card active" data-tone="warm" onclick="setTone('warm')">
+              <div class="tone-card-icon">🤝</div>
+              <div class="tone-card-body">
+                <strong>Warm &amp; Consultative</strong>
+                <p>Encouraging, supportive, and friendly screening tone. Candidates feel comfortable.</p>
+              </div>
+            </div>
+
+            <div class="tone-card" data-tone="rigorous" onclick="setTone('rigorous')">
+              <div class="tone-card-icon">⚡</div>
+              <div class="tone-card-body">
+                <strong>Direct &amp; Rigorous (Aggressive)</strong>
+                <p>Fast-paced, strict technical probing, zero small talk. Validates facts directly.</p>
+              </div>
+            </div>
+
+            <div class="tone-card" data-tone="executive" onclick="setTone('executive')">
+              <div class="tone-card-icon">🎯</div>
+              <div class="tone-card-body">
+                <strong>Executive &amp; Strategic</strong>
+                <p>Polished tone focused on business impact, architectural trade-offs, and leadership metrics.</p>
+              </div>
+            </div>
+
+            <div class="tone-card" data-tone="startup" onclick="setTone('startup')">
+              <div class="tone-card-icon">🚀</div>
+              <div class="tone-card-body">
+                <strong>Startup Founder Mode</strong>
+                <p>High-energy, testing candidate hunger, execution speed, ownership, and startup goals.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Config Inputs Grid -->
+        <div class="config-form-grid">
+          
+          <div class="form-group col-4">
+            <label for="companyName">🏢 Hiring Company Name</label>
+            <input type="text" id="companyName" placeholder="e.g. Weekday" value="Weekday" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-4">
+            <label for="jobTitle">🎯 Target Role Title</label>
+            <input type="text" id="jobTitle" placeholder="e.g. Founder Office Generalist" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-4">
+            <label for="location">📍 Location &amp; Work Setup</label>
+            <input type="text" id="location" placeholder="e.g. Indiranagar, Bangalore (5 Days WFO)" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-4">
+            <label for="maxNoticeDays">⏳ Max Notice Period (Days)</label>
+            <input type="text" id="maxNoticeDays" placeholder="e.g. 30" value="30" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-4">
+            <label for="techStack">⚡ Required Core Tech Stack</label>
+            <input type="text" id="techStack" placeholder="e.g. Python, SQL, Product Ops" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-4">
+            <label for="targetCpa">💰 Target Budget (Fixed CTC)</label>
+            <input type="text" id="targetCpa" placeholder="e.g. INR 12L - 15L Fixed" autocomplete="off" />
+          </div>
+
+          <div class="form-group col-6">
+            <label for="languageMode">🌐 Recruiter Language Mode</label>
+            <select id="languageMode" class="select-input">
+              <option value="en-IN" selected>English (India / Professional)</option>
+              <option value="hinglish">Hinglish Code-Switching (Conversational Hindi/Eng)</option>
+              <option value="en-US">English (US Accent / Professional)</option>
+              <option value="en-UK">English (UK Accent / Professional)</option>
+            </select>
+          </div>
+
+          <div class="form-group col-6">
+            <label for="voiceId">🗣 Maya Voice Persona</label>
+            <select id="voiceId" class="select-input">
+              <option value="shimmer" selected>Maya — OpenAI Shimmer (Warm Female)</option>
+              <option value="alloy">Alex — OpenAI Alloy (Neutral Professional)</option>
+              <option value="fable">Rachel — OpenAI Fable (Expressive Female)</option>
+              <option value="onyx">David — OpenAI Onyx (Deep Male)</option>
+            </select>
+          </div>
+
+          <div class="form-group col-12">
+            <label for="jdText">📄 Job Description (JD)</label>
+            <textarea id="jdText" placeholder="Paste full Job Description text here..." rows="7"></textarea>
+            <div id="jdParseStatus" class="jd-parse-status"></div>
+          </div>
+
+        </div>
+
+        <div class="wizard-footer">
+          <div class="save-status" id="jobSaveStatus"></div>
+          <button class="btn-primary" onclick="saveAndNext(1)">
+            Save &amp; Continue to AI Questions &rarr;
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 2: AI QUESTION ARCHITECT WORKSPACE
+         ========================================================================= -->
+    <section class="tab-content" id="tabView2">
+      <div class="wizard-card glass">
+        
+        <div class="wizard-header">
+          <div>
+            <h2>Step 2: AI Question Architect Workspace</h2>
+            <p class="wizard-sub">Auto-extract category questions from JD, customize with AI Copilot, or edit inline</p>
+          </div>
+          <div class="header-btn-group">
+            <button class="btn-secondary" onclick="switchTab(1)">&larr; Back to Setup</button>
+            <button class="btn-primary" onclick="saveAndNext(2)">Save &amp; Go to Live Call &rarr;</button>
+          </div>
+        </div>
+
+        <!-- AI Copilot Bar -->
+        <div class="copilot-banner">
+          <div class="copilot-info">
+            <span class="copilot-badge">AI Copilot &amp; Refine Engine</span>
+            <p>Tell the AI how to customize questions for this specific candidate, or refine individual category cards below</p>
+          </div>
+          <div class="copilot-search-bar">
+            <select id="copilotMode" class="copilot-mode-select">
+              <option value="REPLACE_ALL" selected>Re-Architect Entire Script</option>
+              <option value="ADD_NEW">Add New AI Category Card</option>
+            </select>
+            <input type="text" id="copilotPrompt" placeholder="e.g. Focus 50% on system design and ask why they left their 1st job in < 6 months..." />
+            <button class="btn-copilot-run" id="btnGenQuestions" onclick="executeCopilotAction()">
+              Run AI Copilot
+            </button>
+          </div>
+        </div>
+
+        <!-- Category Questions Grid -->
+        <div class="architect-workspace">
+          <div class="workspace-meta">
+            <h3>7-Pillar Question Categories</h3>
+            <span class="active-count-badge" id="questionCountBadge">0 Questions Active</span>
+          </div>
+
+          <div class="topics-grid" id="topicsContainer">
+            <div class="topics-empty-placeholder">
+              <div class="empty-sparkle">⚡</div>
+              <h3>No Question Script Architected Yet</h3>
+              <p>Click the <strong>"Architect Questions with AI"</strong> button above to parse your JD and automatically generate 7 category topic cards.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="wizard-footer">
+          <button class="btn-secondary" onclick="switchTab(1)">&larr; Back to Setup</button>
+          <div class="footer-center-btn-group">
+            <button class="btn-secondary" onclick="promptAddAiCategoryCard()">Add AI Category Card</button>
+          </div>
+          <button class="btn-primary" onclick="saveAndNext(2)">Save &amp; Go to Live Call &rarr;</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 3: LIVE SCREENING CALL & CANDIDATE HISTORY
+         ========================================================================= -->
+    <section class="tab-content" id="tabView3">
+      <div class="live-grid">
+        
+        <!-- Left: Live Call Control Center -->
+        <div class="panel glass live-stage-panel">
+          
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-icon-wrap mic-glow">🎙</span>
+              <div>
+                <h2>Live Screening Call Center</h2>
+                <p class="panel-sub">Speakerphone WebRTC Stream</p>
+              </div>
+            </div>
+            <span class="status-badge" id="callStatusBadge">Idle</span>
+          </div>
+
+          <!-- IDLE STATE -->
+          <div class="interview-state" id="stateIdle">
+            <div class="idle-content">
+              
+              <div class="candidate-input-card">
+                <div class="form-group" style="width:100%">
+                  <label for="candidateName">👤 Candidate Full Name</label>
+                  <input type="text" id="candidateName" placeholder="e.g. Rohan Sharma" autocomplete="off"
+                    onkeydown="if(event.key==='Enter') startInterview()" />
+                </div>
+                <div class="form-group" style="width:100%; margin-top: 12px;">
+                  <label for="candidateBio">📄 Candidate Resume / LinkedIn Bio (Optional for personalized AI opener)</label>
+                  <textarea id="candidateBio" placeholder="Paste candidate work history, past roles, or key achievements..." rows="2" style="font-size:12.5px;"></textarea>
+                </div>
+              </div>
+
+              <div class="instructions-grid">
+                <div class="instruction-card">
+                  <div class="step-badge">1</div>
+                  <div class="step-text">
+                    <strong>Architect Script</strong>
+                    <span>Set Tone &amp; AI Questions</span>
+                  </div>
+                </div>
+                <div class="instruction-card">
+                  <div class="step-badge">2</div>
+                  <div class="step-text">
+                    <strong>Call Candidate</strong>
+                    <span>Put phone on Speakerphone</span>
+                  </div>
+                </div>
+                <div class="instruction-card">
+                  <div class="step-badge">3</div>
+                  <div class="step-text">
+                    <strong>Start Maya</strong>
+                    <span>AI conducts custom interview</span>
+                  </div>
+                </div>
+              </div>
+
+              <button class="btn-start" id="startBtn" onclick="startInterview()">
+                <div class="start-btn-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                </div>
+                <span>Start Screening with Maya</span>
+              </button>
+
+            </div>
+          </div>
+
+          <!-- ACTIVE STATE -->
+          <div class="interview-state hidden" id="stateActive">
+            <div class="active-content">
+              
+              <div class="orb-container">
+                <div class="orb-ring ring-1"></div>
+                <div class="orb-ring ring-2"></div>
+                <div class="orb-ring ring-3"></div>
+                <div class="caller-avatar" id="callerAvatar">
+                  <span id="callerInitial">M</span>
+                </div>
+              </div>
+
+              <div class="caller-meta">
+                <h3 class="caller-name" id="callerNameDisplay">Candidate</h3>
+                <p class="caller-role" id="callerRoleDisplay">Maya conducting screening...</p>
+              </div>
+
+              <div class="call-timer-wrap">
+                <div class="call-timer" id="callTimer">00:00</div>
+                <div class="timer-label">Call Duration</div>
+              </div>
+
+              <!-- 12-Bar Equalizer -->
+              <div class="visualizer" id="visualizer">
+                <div class="vis-bar" style="--i:0"></div>
+                <div class="vis-bar" style="--i:1"></div>
+                <div class="vis-bar" style="--i:2"></div>
+                <div class="vis-bar" style="--i:3"></div>
+                <div class="vis-bar" style="--i:4"></div>
+                <div class="vis-bar" style="--i:5"></div>
+                <div class="vis-bar" style="--i:6"></div>
+                <div class="vis-bar" style="--i:7"></div>
+                <div class="vis-bar" style="--i:8"></div>
+                <div class="vis-bar" style="--i:9"></div>
+                <div class="vis-bar" style="--i:10"></div>
+                <div class="vis-bar" style="--i:11"></div>
+              </div>
+
+              <div class="ai-status-pill">
+                <span class="pulse-dot"></span>
+                <span id="aiStatusLabel">Connecting to Maya...</span>
+              </div>
+
+              <!-- Live Transcript Stream -->
+              <div class="live-transcript-container" id="liveTranscriptContainer">
+                <div class="lt-header">
+                  <div class="lt-header-title">
+                    <span>⚡ Live Screening Transcript Stream</span>
+                    <span class="lt-live-tag">LIVE STAGE</span>
+                  </div>
+                  <button class="btn-lt-expand" onclick="openFullscreenTranscript()" title="Expand to full screen">
+                    🔍 Fullscreen Mode
+                  </button>
+                </div>
+                <div class="lt-feed" id="liveTranscriptFeed" onscroll="handleTranscriptScroll(this)">
+                  <p class="lt-placeholder">Live conversation transcript will stream here as candidate speaks...</p>
+                </div>
+                <div class="lt-scroll-pill hidden" id="ltScrollPill" onclick="scrollToTranscriptBottom()">
+                  ⬇ New live speech received (Click to scroll)
+                </div>
+              </div>
+
+              <button class="btn-end" id="endBtn" onclick="endInterview()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                End Interview
+              </button>
+
+            </div>
+          </div>
+
+          <!-- PROCESSING STATE -->
+          <div class="interview-state hidden" id="stateProcessing">
+            <div class="processing-content">
+              <div class="processing-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-icon">⚡</div>
+              </div>
+              <h3 class="processing-title">Analyzing Screening Data</h3>
+              <p class="processing-sub">Evaluating candidate responses against dealbreakers &amp; technical requirements...</p>
+              
+              <div class="processing-steps">
+                <div class="proc-step" id="procStep1">
+                  <span class="proc-icon">✓</span>
+                  <span>Transcribing audio stream</span>
+                </div>
+                <div class="proc-step active" id="procStep2">
+                  <span class="proc-icon">⟳</span>
+                  <span>Evaluating dealbreakers &amp; CTC fit</span>
+                </div>
+                <div class="proc-step dim" id="procStep3">
+                  <span class="proc-icon">◦</span>
+                  <span>Generating scorecards &amp; summary</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Right: Candidate History -->
+        <div class="panel glass history-stage-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="panel-icon-wrap">📋</span>
+              <div>
+                <h2>Candidate History</h2>
+                <p class="panel-sub">Past evaluations &amp; scorecards</p>
+              </div>
+            </div>
+            <button class="btn-refresh" onclick="loadCandidates()" title="Refresh list">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="history-search">
+            <input type="text" id="historySearchInput" placeholder="🔍 Search candidates by name or role..." oninput="filterCandidates()" />
+          </div>
+
+          <div class="candidates-list" id="candidatesList">
+            <div class="empty-state">
+              <div class="empty-icon">📭</div>
+              <p>No candidates evaluated yet.</p>
+              <p class="empty-sub">Start your first call to view candidate scorecards here.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =========================================================================
+         TAB 4: ROLE LEADERBOARD & CANDIDATE TALENT RANKING
+         ========================================================================= -->
+    <!-- =========================================================================
+         TAB 4: UNIFIED CANDIDATE DASHBOARD (LEADERBOARD & INCIDENT ACTION CENTER)
+         ========================================================================= -->
+    <section class="tab-content" id="tabView4">
+      <div class="fullscreen-leaderboard-container">
+        
+        <!-- TOP EXECUTIVE HEADER & QUICK ACTIONS -->
+        <div class="fs-leaderboard-header">
+          <div class="fs-title-group">
+            <h2>Candidate Talent Leaderboard &amp; Incident Control Hub</h2>
+            <p>Real-time candidate rankings, executive dossiers, and call incident recovery center</p>
+          </div>
+          <div class="fs-header-actions">
+            <select id="leaderboardRoleFilter" class="select-input" onchange="renderLeaderboardDashboard()">
+              <option value="ALL">All Roles &amp; Positions</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- FULL-WIDTH KPI METRIC STRIP -->
+        <div class="leaderboard-kpi-strip">
+          <div class="kpi-card">
+            <div class="kpi-title">TOTAL CANDIDATES SCREENED</div>
+            <div class="kpi-val" id="kpiTotalScreened">0</div>
+            <div class="kpi-sub">Across all active roles</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">TOP MATCH SCORE</div>
+            <div class="kpi-val emerald" id="kpiTopScore">—</div>
+            <div class="kpi-sub">Highest Maya rating</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">AVG SCREENING DURATION</div>
+            <div class="kpi-val" id="kpiAvgDuration">3m 45s</div>
+            <div class="kpi-sub">Per screening call</div>
+          </div>
+          <div class="kpi-card danger">
+            <div class="kpi-title">CALL INCIDENTS &amp; DROPS</div>
+            <div class="kpi-val rose" id="kpiIncidentsCount">0</div>
+            <div class="kpi-sub">Requires recruiter action</div>
+          </div>
+        </div>
+
+        <!-- 2-COLUMN FULL-SCREEN SPLIT WORKSPACE -->
+        <div class="fullscreen-split-workspace">
+          
+          <!-- LEFT COLUMN (65%): SPOTLIGHT + RANKING TABLE -->
+          <div class="fs-left-col">
+            
+            <div class="section-block-title">
+              <span>Candidate Talent Leaderboard &amp; Rankings</span>
+            </div>
+
+            <!-- Spotlight #1 Candidate Banner -->
+            <div class="leaderboard-spotlight" id="spotlightBanner">
+              <div class="spotlight-badge">🥇 #1 TOP RANKED CANDIDATE</div>
+              <div class="spotlight-body">
+                <div class="spotlight-info">
+                  <h3 id="spotlightName">Candidate Name</h3>
+                  <p id="spotlightMeta">Role &amp; Company</p>
+                </div>
+                <div class="spotlight-scores">
+                  <div class="spot-score-box">
+                    <span class="spot-score-val" id="spotlightOverall">—</span>
+                    <span class="spot-score-lbl">Overall</span>
+                  </div>
+                  <div class="spot-score-box">
+                    <span class="spot-score-val" id="spotlightTech">—</span>
+                    <span class="spot-score-lbl">Technical</span>
+                  </div>
+                  <div class="spot-score-box">
+                    <span class="spot-score-val" id="spotlightComm">—</span>
+                    <span class="spot-score-lbl">Communication</span>
+                  </div>
+                </div>
+                <div class="spotlight-actions">
+                  <button class="btn-primary" id="spotlightShareBtn" onclick="shareSpotlightWhatsApp()">
+                    📲 Share WhatsApp Card
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Leaderboard Rankings Table -->
+            <div class="ranking-table-container">
+              <table class="ranking-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Candidate Name</th>
+                    <th>Target Role &amp; Company</th>
+                    <th>Overall Score</th>
+                    <th>Tech Score</th>
+                    <th>Comm Score</th>
+                    <th>Recommendation</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="leaderboardTbody">
+                  <tr>
+                    <td colspan="8" class="text-center" style="padding: 36px;">
+                      <p class="empty-sub">No candidate evaluation data available yet. Start calls to generate rankings.</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+
+          <!-- RIGHT COLUMN (35%): RECRUITER TASK QUEUE & FOLLOW-UP CENTER -->
+          <div class="fs-right-col">
+            <div class="section-block-title">
+              <span>📋 Recruiter Task Queue</span>
+              <span class="active-count-badge" id="incidentBadgeCount">0 TASKS</span>
+            </div>
+
+            <div class="incidents-grid-container" id="incidentsGridContainer">
+              <div class="topics-empty-placeholder" style="padding: 28px;">
+                <div class="empty-sparkle">✓</div>
+                <h3>All Systems Optimal</h3>
+                <p>Calls that drop early (< 45s) or hit audio disconnects will automatically appear here with 1-click recovery actions.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ========== RESULTS MODAL ========== -->
+  <div class="modal-overlay hidden" id="resultsModal" onclick="handleModalClick(event)">
+    <div class="modal glass" id="modalContent">
+
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2 class="modal-candidate-name" id="modalCandidateName">Candidate</h2>
+          <div class="modal-meta" id="modalMeta"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-action-sm btn-whatsapp" id="copyWhatsAppBtn" onclick="copyWhatsAppCard()">
+            📲 WhatsApp Card
+          </button>
+          <button class="btn-action-sm" id="copyReportBtn" onclick="copyCandidateReport()">
+            📋 Copy Report
+          </button>
+          <button class="btn-action-sm" id="downloadReportBtn" onclick="downloadCandidateReport()">
+            📥 Download .txt
+          </button>
+          <button class="modal-close" onclick="closeModal()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-body">
+
+        <div class="scores-section">
+          <div class="score-ring-wrap">
+            <div class="score-ring ring-overall" id="ringOverall">
+              <svg class="ring-svg" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50"/>
+                <circle class="ring-fill" id="ringOverallFill" cx="60" cy="60" r="50"
+                  style="stroke-dasharray: 314; stroke-dashoffset: 314;"/>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-value" id="scoreOverall">—</span>
+                <span class="ring-label">Overall</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="score-bars">
+            <div class="score-bar-item">
+              <div class="score-bar-label">
+                <span>Technical &amp; Problem Solving</span>
+                <span id="scoreTechnical" class="score-bar-num">—</span>
+              </div>
+              <div class="score-bar-track">
+                <div class="score-bar-fill tech" id="barTech" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="score-bar-item">
+              <div class="score-bar-label">
+                <span>Communication &amp; Articulation</span>
+                <span id="scoreCommunication" class="score-bar-num">—</span>
+              </div>
+              <div class="score-bar-track">
+                <div class="score-bar-fill comm" id="barComm" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Call Incident & Failure Diagnostic Banner -->
+        <div id="incidentBannerContainer"></div>
+
+        <div class="recommendation-banner" id="recommendationBanner"></div>
+
+        <!-- Call Recording Playback Banner -->
+        <div class="audio-player-card" id="audioPlayerContainer" style="display:none; margin-bottom: 20px;">
+          <div class="audio-player-title">🔊 Full Call Recording Playback</div>
+          <audio controls id="modalAudioPlayer" style="width:100%; margin-top:8px;" src=""></audio>
+        </div>
+
+        <div class="results-block">
+          <div class="results-block-title">📝 Executive Summary</div>
+          <p class="results-text" id="modalSummary"></p>
+        </div>
+
+        <div class="results-block">
+          <div class="results-block-title">✅ Key Strengths &amp; Highlights</div>
+          <ul class="results-list" id="modalHighlights"></ul>
+        </div>
+
+        <div class="results-block" id="concernsBlock">
+          <div class="results-block-title">⚠️ Concerns &amp; Dealbreakers</div>
+          <ul class="results-list concerns" id="modalConcerns"></ul>
+        </div>
+
+        <!-- Talent Persona Card -->
+        <div class="results-block" id="talentPersonaBlock" style="display:none;">
+          <div class="results-block-title">Talent Persona</div>
+          <div class="talent-persona-card" id="talentPersonaCard">
+            <div class="tp-header">
+              <span class="tp-icon" id="tpIcon"></span>
+              <div>
+                <div class="tp-label" id="tpLabel"></div>
+                <div class="tp-desc" id="tpDesc"></div>
+              </div>
+            </div>
+            <div class="tp-recruiter-note" id="tpNote"></div>
+          </div>
+        </div>
+
+        <!-- Answer Depth Radar -->
+        <div class="results-block" id="answerRadarBlock" style="display:none;">
+          <div class="results-block-title">Answer Depth Radar <span class="radar-badge">Post-Call Intel</span></div>
+          <p class="radar-explainer">Maya flagged the following areas where the candidate mentioned a skill or result but didn't provide specific details. These are <strong>not rejections</strong> — they're conversation starters for your human round.</p>
+          <div id="answerRadarCards"></div>
+        </div>
+
+        <div class="results-block">
+          <div class="results-block-title">🗣 Full Conversation Transcript</div>
+          <div class="transcript-box" id="modalTranscript"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast hidden" id="toast"></div>
+
+  <!-- Fullscreen Live Transcript Modal -->
+  <div class="modal-overlay hidden" id="fullscreenTranscriptModal" onclick="closeFullscreenTranscriptOnBg(event)">
+    <div class="modal-container fs-modal-container">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2>💬 Fullscreen Live Screening Transcript</h2>
+          <span class="lt-live-tag">HIGH DEFINITION VIEW</span>
+        </div>
+        <button class="modal-close" onclick="closeFullscreenTranscript()">✕</button>
+      </div>
+      <div class="modal-body fs-modal-body">
+        <div class="fs-transcript-feed" id="fsTranscriptFeed">
+          <!-- Mirror of live transcript feed -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeFullscreenTranscript()">Close Fullscreen View</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
