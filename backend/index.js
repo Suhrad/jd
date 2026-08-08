@@ -10,8 +10,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, '../frontend')));
+// Root path: always redirect to login page (must be BEFORE static middleware)
+app.get('/', (req, res) => {
+  res.redirect('/login.html');
+});
+
+// Serve frontend static files (with index:false so / doesn't auto-serve index.html)
+// No-cache for JS/CSS so browser always gets latest during dev
+app.use(express.static(path.join(__dirname, '../frontend'), {
+  index: false,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
 
 // API Routes
 app.use('/api/auth',       require('./routes/auth'));
@@ -28,10 +41,11 @@ app.get('/api/config', (req, res) => {
   res.json({ vapiPublicKey: process.env.VAPI_PUBLIC_KEY });
 });
 
-// Catch-all: serve the frontend
+// Catch-all: serve the frontend app
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
+
 
 // Boot: init DB first, then start server
 const PORT = process.env.PORT || 3000;

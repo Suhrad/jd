@@ -86,6 +86,45 @@ router.get('/by-pair', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/jobs/:id — Get job config by direct ID (AM-scoped)
+router.get('/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user;
+    const requestedJob = await db.get('SELECT * FROM jobs WHERE id = ?', [id]);
+    if (!requestedJob) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    let targetJob = requestedJob;
+    // If requesting user is an AM and the job belongs to a different user:
+    // Find if the current AM has their own saved version for this company + role
+    if (user.role !== 'admin' && requestedJob.created_by_user_id !== user.id) {
+      const userOwnJob = await db.get(
+        'SELECT * FROM jobs WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_by_user_id = ? LIMIT 1',
+        [requestedJob.company_id, requestedJob.title.trim(), user.id]
+      );
+      if (userOwnJob) {
+        targetJob = userOwnJob;
+      } else {
+        // Return clean template copy so saving creates their own row under created_by_user_id = user.id
+        targetJob = { ...requestedJob, id: null, created_by_user_id: user.id };
+      }
+    }
+
+    if (targetJob && targetJob.custom_questions) {
+      try {
+        targetJob.custom_questions = typeof targetJob.custom_questions === 'string'
+          ? JSON.parse(targetJob.custom_questions)
+          : targetJob.custom_questions;
+      } catch (_) {}
+    }
+    res.json(targetJob);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/jobs/parse-jd — Extract parameters and recruiter persona details from JD
 router.post('/parse-jd', async (req, res) => {
   try {

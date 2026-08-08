@@ -23,6 +23,18 @@ function convertSqlForPg(sql) {
   // Replace SQLite specific functions/keywords
   converted = converted.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
   converted = converted.replace(/datetime\("now"\)/gi, 'CURRENT_TIMESTAMP');
+  // Convert integer boolean literals for BOOLEAN columns in PostgreSQL
+  // is_active is stored as BOOLEAN in PG but INTEGER in SQLite
+  // Handle SET clause: is_active = 1 → is_active = TRUE
+  converted = converted.replace(/\bis_active\s*=\s*1\b/gi, 'is_active = TRUE');
+  converted = converted.replace(/\bis_active\s*=\s*0\b/gi, 'is_active = FALSE');
+  // Handle INSERT VALUES tail: (..., 'admin', 1) → (..., 'admin', TRUE)
+  // when the column list of the same INSERT contains is_active
+  if (/\bis_active\b/.test(converted)) {
+    // Match literal integer 1 or 0 at the very end of a VALUES(...) clause
+    converted = converted.replace(/,\s*1(\s*\))/g, ', TRUE$1');
+    converted = converted.replace(/,\s*0(\s*\))/g, ', FALSE$1');
+  }
   return converted;
 }
 
@@ -31,316 +43,167 @@ async function initDb() {
   if (!isPg && sqliteDb) return sqliteDb;
 
   if (process.env.DATABASE_URL) {
-    isPg = true;
-
     let connStr = process.env.DATABASE_URL;
-
-    // Supabase direct connections (db.*.supabase.co:5432) are IPv6-only.
-    // Render does not support outbound IPv6, so we auto-redirect to the
-    // Supabase connection pooler (aws-0-*.pooler.supabase.com:6543) which is IPv4.
-    const directMatch = connStr.match(/db\.([\w]+)\.supabase\.co/);
+    const directMatch = connStr.match(/db\.(\w+)\.supabase\.co/);
     if (directMatch) {
       const projectRef = directMatch[1];
-      // Extract user/password from the connection string
       const urlParsed = new URL(connStr);
       const password = urlParsed.password;
-      const region = 'ap-south-1'; // Mumbai - your Supabase project region
-      connStr = `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:6543/postgres`;
-      console.log('[DB] Auto-redirected to Supabase connection pooler (IPv4 compatible)');
+      connStr = 'postgresql://postgres.' + projectRef + ':' + password + '@aws-0-ap-south-1.pooler.supabase.com:6543/postgres';
     }
 
-    pgPool = new Pool({
-      connectionString: connStr,
-      ssl: { rejectUnauthorized: false },
-      family: 4
-    });
-
-    // Create PG Schema
-    await pgPool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id            SERIAL PRIMARY KEY,
-        name          TEXT NOT NULL,
-        email         TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        role          TEXT DEFAULT 'account_manager',
-        is_active     INTEGER DEFAULT 1,
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS companies (
-        id             SERIAL PRIMARY KEY,
-        name           TEXT NOT NULL,
-        elevator_pitch TEXT DEFAULT '',
-        hq_location    TEXT DEFAULT 'Bangalore',
-        logo_url       TEXT DEFAULT '',
-        created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS company_roles (
-        id         SERIAL PRIMARY KEY,
-        company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
-        role_title TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS user_company_assignments (
-        id         SERIAL PRIMARY KEY,
-        user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS jobs (
-        id               SERIAL PRIMARY KEY,
-        company_id       INTEGER,
-        created_by_user_id INTEGER,
-        title            TEXT NOT NULL,
-        company_name     TEXT DEFAULT 'Weekday',
-        location         TEXT DEFAULT 'Hybrid / Onsite',
-        max_notice_days  TEXT DEFAULT '30',
-        tech_stack       TEXT DEFAULT '',
-        target_cpa       TEXT DEFAULT '',
-        tone             TEXT DEFAULT 'warm',
-        duration_target  INTEGER DEFAULT 5,
-        voice_id         TEXT DEFAULT 'shimmer',
-        custom_questions TEXT DEFAULT '[]',
-        jd_text          TEXT NOT NULL,
-        requirements     TEXT DEFAULT '',
-        created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS candidates (
-        id                  SERIAL PRIMARY KEY,
-        job_id              INTEGER,
-        company_id          INTEGER,
-        account_manager_id  INTEGER,
-        name                TEXT NOT NULL,
-        call_id             TEXT,
-        status              TEXT DEFAULT 'pending',
-        duration_secs       INTEGER,
-        transcript          TEXT,
-        summary             TEXT,
-        overall_score       INTEGER,
-        technical_score     INTEGER,
-        communication_score INTEGER,
-        highlights          TEXT DEFAULT '[]',
-        concerns            TEXT DEFAULT '[]',
-        recommendation      TEXT,
-        called_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at        TIMESTAMP,
-        FOREIGN KEY (job_id) REFERENCES jobs(id)
-      );
-    `);
-
-    // Auto-migration for PostgreSQL (ADD COLUMN IF NOT EXISTS)
-    const columnsToAdd = [
-      { name: 'company_id',         def: "INTEGER DEFAULT 1" },
-      { name: 'created_by_user_id', def: "INTEGER DEFAULT 1" },
-      { name: 'company_name',       def: "TEXT DEFAULT 'Weekday'" },
-      { name: 'location',           def: "TEXT DEFAULT 'Hybrid / Onsite'" },
-      { name: 'max_notice_days',    def: "TEXT DEFAULT '30'" },
-      { name: 'tech_stack',         def: "TEXT DEFAULT ''" },
-      { name: 'target_cpa',         def: "TEXT DEFAULT ''" },
-      { name: 'tone',               def: "TEXT DEFAULT 'warm'" },
-      { name: 'language_mode',      def: "TEXT DEFAULT 'en-IN'" },
-      { name: 'duration_target',    def: "INTEGER DEFAULT 5" },
-      { name: 'voice_id',           def: "TEXT DEFAULT 'shimmer'" },
-      { name: 'custom_questions',   def: "TEXT DEFAULT '[]'" }
-    ];
-
-    for (const col of columnsToAdd) {
-      try {
-        await pgPool.query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS ${col.name} ${col.def}`);
-      } catch (err) {
-        console.warn(`[db pg auto-migration jobs] Alter table failed for column ${col.name}:`, err.message);
-      }
-    }
-
-    const candidateColsToAdd = [
-      { name: 'candidate_bio',    def: "TEXT DEFAULT ''" },
-      { name: 'recording_url',    def: "TEXT DEFAULT ''" },
-      { name: 'call_health',      def: "TEXT DEFAULT '{}'" },
-      { name: 'incident_resolved', def: "INTEGER DEFAULT 0" },
-      { name: 'talent_persona',   def: "TEXT DEFAULT '{}'" },
-      { name: 'vague_answers',    def: "TEXT DEFAULT '[]'" }
-    ];
-
-    for (const col of candidateColsToAdd) {
-      try {
-        await pgPool.query(`ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ${col.name} ${col.def}`);
-      } catch (err) {
-        console.warn(`[db pg auto-migration candidates] Alter table failed for column ${col.name}:`, err.message);
-      }
-    }
-
-    // Short call cleanup on PG
     try {
+      const pool = new Pool({ connectionString: connStr, ssl: { rejectUnauthorized: false }, family: 4, connectionTimeoutMillis: 5000 });
+      await pool.query('SELECT 1'); // verify connection alive
+      pgPool = pool;
+      isPg = true;
+
       await pgPool.query(`
-        UPDATE candidates SET
-          overall_score       = 0,
-          technical_score     = 0,
-          communication_score = 0,
-          recommendation      = 'Call Dropped Early (Re-Screen)',
-          summary             = 'Call dropped off early after 25-30 seconds before core screening questions could be conducted. Re-screening recommended.',
-          concerns            = '["Call disconnected early (< 45 sec) before core technical & role questions could be asked"]'
-        WHERE status = 'completed'
-          AND (duration_secs < 45 OR length(COALESCE(transcript, '')) < 180)
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL, role TEXT DEFAULT 'account_manager',
+          is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS companies (
+          id SERIAL PRIMARY KEY, name TEXT NOT NULL, elevator_pitch TEXT DEFAULT '',
+          hq_location TEXT DEFAULT 'Bangalore', logo_url TEXT DEFAULT '',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS company_roles (
+          id SERIAL PRIMARY KEY, company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+          role_title TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS user_company_assignments (
+          id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS jobs (
+          id SERIAL PRIMARY KEY, company_id INTEGER, created_by_user_id INTEGER,
+          title TEXT NOT NULL, company_name TEXT DEFAULT 'Weekday',
+          location TEXT DEFAULT 'Hybrid / Onsite', tonality TEXT DEFAULT 'warm',
+          jd_text TEXT, questions_json TEXT, dealbreakers_json TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS candidates (
+          id SERIAL PRIMARY KEY, job_id INTEGER REFERENCES jobs(id) ON DELETE CASCADE,
+          created_by_user_id INTEGER, name TEXT NOT NULL, email TEXT, phone TEXT,
+          status TEXT DEFAULT 'pending', recommendation TEXT,
+          overall_score INTEGER, technical_score INTEGER, communication_score INTEGER, culture_score INTEGER,
+          transcript_json TEXT, recording_url TEXT, call_health_json TEXT,
+          duration_secs INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
       `);
-    } catch (err) {
-      console.warn('[db pg] Short call cleanup warning:', err.message);
+
+      const pgJobCols = [
+        ['company_id','INTEGER DEFAULT 1'],['created_by_user_id','INTEGER DEFAULT 1'],
+        ['company_name',"TEXT DEFAULT 'Weekday'"],['location',"TEXT DEFAULT 'Hybrid / Onsite'"],
+        ['max_notice_days',"TEXT DEFAULT '30'"],['tech_stack',"TEXT DEFAULT ''"],
+        ['target_cpa',"TEXT DEFAULT ''"],['tone',"TEXT DEFAULT 'warm'"],
+        ['language_mode',"TEXT DEFAULT 'en-IN'"],['duration_target','INTEGER DEFAULT 5'],
+        ['voice_id',"TEXT DEFAULT 'shimmer'"],['custom_questions',"TEXT DEFAULT '[]'"],
+        ['requirements',"TEXT DEFAULT ''"]
+      ];
+      for (const [col, def] of pgJobCols) {
+        try { await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS ' + col + ' ' + def); } catch (_) {}
+      }
+
+      const pgCandCols = [
+        ['candidate_bio',"TEXT DEFAULT ''"],['recording_url',"TEXT DEFAULT ''"],
+        ['call_health',"TEXT DEFAULT '{}'"],['incident_resolved','INTEGER DEFAULT 0'],
+        ['talent_persona',"TEXT DEFAULT '{}'"],['vague_answers',"TEXT DEFAULT '[]'"],
+        ['transcript','TEXT'],['summary','TEXT'],['highlights',"TEXT DEFAULT '[]'"],
+        ['concerns',"TEXT DEFAULT '[]'"],['called_at','TIMESTAMP DEFAULT CURRENT_TIMESTAMP'],
+        ['completed_at','TIMESTAMP'],['call_id','TEXT'],
+        ['technical_score','INTEGER'],['communication_score','INTEGER'],['overall_score','INTEGER']
+      ];
+      for (const [col, def] of pgCandCols) {
+        try { await pgPool.query('ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ' + col + ' ' + def); } catch (_) {}
+      }
+
+      await seedInitialDataPG(pgPool);
+      console.log('[DB] Connected to PostgreSQL (Production / Supabase)');
+      return pgPool;
+    } catch (pgErr) {
+      console.warn('[DB] PostgreSQL unreachable, falling back to SQLite:', pgErr.message);
+      isPg = false;
+      pgPool = null;
+      // FALL THROUGH to SQLite below
     }
-
-    console.log('✓ Connected to PostgreSQL Database (Production)');
-    return pgPool;
-  } else {
-    isPg = false;
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
-    const SQL = await initSqlJs();
-
-    if (fs.existsSync(dbPath)) {
-      const buf = fs.readFileSync(dbPath);
-      sqliteDb = new SQL.Database(buf);
-    } else {
-      sqliteDb = new SQL.Database();
-    }
-
-    // Create tables with expanded recruiter parameters and RBAC
-    sqliteDb.run(`
-      CREATE TABLE IF NOT EXISTS users (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        name          TEXT NOT NULL,
-        email         TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        role          TEXT DEFAULT 'account_manager',
-        is_active     INTEGER DEFAULT 1,
-        created_at    TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS companies (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        name           TEXT NOT NULL,
-        elevator_pitch TEXT DEFAULT '',
-        hq_location    TEXT DEFAULT 'Bangalore',
-        logo_url       TEXT DEFAULT '',
-        created_at     TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS company_roles (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
-        role_title TEXT NOT NULL,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS user_company_assignments (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS jobs (
-        id               INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_id       INTEGER DEFAULT 1,
-        created_by_user_id INTEGER DEFAULT 1,
-        title            TEXT NOT NULL,
-        company_name     TEXT DEFAULT 'Weekday',
-        location         TEXT DEFAULT 'Hybrid / Onsite',
-        max_notice_days  TEXT DEFAULT '30',
-        tech_stack       TEXT DEFAULT '',
-        target_cpa       TEXT DEFAULT '',
-        tone             TEXT DEFAULT 'warm',
-        duration_target  INTEGER DEFAULT 5,
-        voice_id         TEXT DEFAULT 'shimmer',
-        custom_questions TEXT DEFAULT '[]',
-        jd_text          TEXT NOT NULL,
-        requirements     TEXT DEFAULT '',
-        created_at       TEXT DEFAULT (datetime('now')),
-        updated_at       TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS candidates (
-        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_id              INTEGER,
-        company_id          INTEGER,
-        account_manager_id  INTEGER,
-        name                TEXT NOT NULL,
-        call_id             TEXT,
-        status              TEXT DEFAULT 'pending',
-        duration_secs       INTEGER,
-        transcript          TEXT,
-        summary             TEXT,
-        overall_score       INTEGER,
-        technical_score     INTEGER,
-        communication_score INTEGER,
-        highlights          TEXT DEFAULT '[]',
-        concerns            TEXT DEFAULT '[]',
-        recommendation      TEXT,
-        called_at           TEXT DEFAULT (datetime('now')),
-        completed_at        TEXT,
-        FOREIGN KEY (job_id) REFERENCES jobs(id)
-      );
-    `);
-
-    // Auto-migration loop: Ensure all columns exist in SQLite database
-    const columnsToAdd = [
-      { name: 'company_name',     def: "TEXT DEFAULT 'Weekday'" },
-      { name: 'location',         def: "TEXT DEFAULT 'Hybrid / Onsite'" },
-      { name: 'max_notice_days',  def: "TEXT DEFAULT '30'" },
-      { name: 'tech_stack',       def: "TEXT DEFAULT ''" },
-      { name: 'target_cpa',       def: "TEXT DEFAULT ''" },
-      { name: 'tone',             def: "TEXT DEFAULT 'warm'" },
-      { name: 'language_mode',    def: "TEXT DEFAULT 'en-IN'" },
-      { name: 'duration_target',  def: "INTEGER DEFAULT 5" },
-      { name: 'voice_id',          def: "TEXT DEFAULT 'shimmer'" },
-      { name: 'custom_questions', def: "TEXT DEFAULT '[]'" }
-    ];
-
-    for (const col of columnsToAdd) {
-      try {
-        sqliteDb.run(`ALTER TABLE jobs ADD COLUMN ${col.name} ${col.def}`);
-      } catch (_) {}
-    }
-
-    // Auto-migration for candidates table
-    const candidateColsToAdd = [
-      { name: 'candidate_bio',    def: "TEXT DEFAULT ''" },
-      { name: 'recording_url',    def: "TEXT DEFAULT ''" },
-      { name: 'call_health',      def: "TEXT DEFAULT '{}'" },
-      { name: 'incident_resolved', def: "INTEGER DEFAULT 0" },
-      { name: 'talent_persona',   def: "TEXT DEFAULT '{}'" },
-      { name: 'vague_answers',    def: "TEXT DEFAULT '[]'" }
-    ];
-    for (const col of candidateColsToAdd) {
-      try {
-        sqliteDb.run(`ALTER TABLE candidates ADD COLUMN ${col.name} ${col.def}`);
-      } catch (_) {}
-    }
-
-    // Auto-cleanup for SQLite
-    try {
-      sqliteDb.run(`
-        UPDATE candidates SET
-          overall_score       = 0,
-          technical_score     = 0,
-          communication_score = 0,
-          recommendation      = 'Call Dropped Early (Re-Screen)',
-          summary             = 'Call dropped off early after 25-30 seconds before core screening questions could be conducted. Re-screening recommended.',
-          concerns            = '["Call disconnected early (< 45 sec) before core technical & role questions could be asked"]'
-        WHERE status = 'completed'
-          AND (duration_secs < 45 OR length(COALESCE(transcript, '')) < 180)
-      `);
-    } catch (err) {
-      console.warn('[db] Short call cleanup warning:', err.message);
-    }
-
-    await seedInitialDataSQLite();
-    save();
-    console.log('✓ Initialized SQLite Database (Local fallback)');
-    return sqliteDb;
   }
+
+  // SQLite fallback
+  isPg = false;
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+  const SQL = await initSqlJs();
+  if (fs.existsSync(dbPath)) {
+    sqliteDb = new SQL.Database(fs.readFileSync(dbPath));
+  } else {
+    sqliteDb = new SQL.Database();
+  }
+
+  sqliteDb.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL, role TEXT DEFAULT 'account_manager',
+      is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS companies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, elevator_pitch TEXT DEFAULT '',
+      hq_location TEXT DEFAULT 'Bangalore', logo_url TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS company_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+      role_title TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS user_company_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, company_id INTEGER DEFAULT 1,
+      created_by_user_id INTEGER DEFAULT 1, title TEXT NOT NULL,
+      company_name TEXT DEFAULT 'Weekday', location TEXT DEFAULT 'Hybrid / Onsite',
+      max_notice_days TEXT DEFAULT '30', tech_stack TEXT DEFAULT '', target_cpa TEXT DEFAULT '',
+      tone TEXT DEFAULT 'warm', duration_target INTEGER DEFAULT 5, voice_id TEXT DEFAULT 'shimmer',
+      custom_questions TEXT DEFAULT '[]', jd_text TEXT NOT NULL,
+      requirements TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS candidates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, job_id INTEGER, company_id INTEGER,
+      account_manager_id INTEGER, name TEXT NOT NULL, call_id TEXT,
+      status TEXT DEFAULT 'pending', duration_secs INTEGER, transcript TEXT, summary TEXT,
+      overall_score INTEGER, technical_score INTEGER, communication_score INTEGER,
+      highlights TEXT DEFAULT '[]', concerns TEXT DEFAULT '[]', recommendation TEXT,
+      called_at TEXT DEFAULT (datetime('now')), completed_at TEXT,
+      FOREIGN KEY (job_id) REFERENCES jobs(id)
+    );
+  `);
+
+  const sqliteJobCols = [
+    ['company_name',"TEXT DEFAULT 'Weekday'"],['location',"TEXT DEFAULT 'Hybrid / Onsite'"],
+    ['max_notice_days',"TEXT DEFAULT '30'"],['tech_stack',"TEXT DEFAULT ''"],
+    ['target_cpa',"TEXT DEFAULT ''"],['tone',"TEXT DEFAULT 'warm'"],
+    ['language_mode',"TEXT DEFAULT 'en-IN'"],['duration_target','INTEGER DEFAULT 5'],
+    ['voice_id',"TEXT DEFAULT 'shimmer'"],['custom_questions',"TEXT DEFAULT '[]'"]
+  ];
+  for (const [col, def] of sqliteJobCols) {
+    try { sqliteDb.run('ALTER TABLE jobs ADD COLUMN ' + col + ' ' + def); } catch (_) {}
+  }
+
+  const sqliteCandCols = [
+    ['candidate_bio',"TEXT DEFAULT ''"],['recording_url',"TEXT DEFAULT ''"],
+    ['call_health',"TEXT DEFAULT '{}'"],['incident_resolved','INTEGER DEFAULT 0'],
+    ['talent_persona',"TEXT DEFAULT '{}'"],['vague_answers',"TEXT DEFAULT '[]'"]
+  ];
+  for (const [col, def] of sqliteCandCols) {
+    try { sqliteDb.run('ALTER TABLE candidates ADD COLUMN ' + col + ' ' + def); } catch (_) {}
+  }
+
+  await seedInitialDataSQLite();
+  save();
+  console.log('[DB] Initialized SQLite (Local / Offline fallback)');
+  return sqliteDb;
 }
 
 async function seedInitialDataPG(pool) {
@@ -348,50 +211,73 @@ async function seedInitialDataPG(pool) {
     const bcrypt = require('bcryptjs');
     const seedPairs = require('./seedData.json');
 
-    // 1. Seed Admin user if users table is empty
-    const userRes = await pool.query('SELECT COUNT(*) as cnt FROM users');
-    if (parseInt(userRes.rows[0].cnt, 10) === 0) {
-      const hash = await bcrypt.hash('weekday@123', 10);
-      await pool.query(
-        "INSERT INTO users (name, email, password_hash, role) VALUES ('Surad (Admin)', 'admin@weekday.cx', $1, 'admin')",
-        [hash]
-      );
-      await pool.query(
-        "INSERT INTO users (name, email, password_hash, role) VALUES ('Priya Sharma (AM)', 'priya@weekday.cx', $1, 'account_manager')",
-        [hash]
-      );
-      await pool.query(
-        "INSERT INTO users (name, email, password_hash, role) VALUES ('Rohan Mehta (AM)', 'rohan@weekday.cx', $1, 'account_manager')",
-        [hash]
-      );
+    // 1. Guarantee admin@weekday.com exists with password 'admin'
+    const adminHash = await bcrypt.hash('admin', 10);
+    const adminUser = await pool.query("SELECT id FROM users WHERE LOWER(email) = 'admin@weekday.com'");
+    if (adminUser.rows.length > 0) {
+      await pool.query("UPDATE users SET password_hash = $1, is_active = TRUE, role = 'admin' WHERE id = $2", [adminHash, adminUser.rows[0].id]);
+      console.log('[DB Seed PG] ✓ Admin password synced for admin@weekday.com');
+    } else {
+      const legacyAdmin = await pool.query("SELECT id FROM users WHERE LOWER(email) = 'admin@weekday.cx'");
+      if (legacyAdmin.rows.length > 0) {
+        await pool.query("UPDATE users SET email = 'admin@weekday.com', password_hash = $1, is_active = TRUE, role = 'admin' WHERE id = $2", [adminHash, legacyAdmin.rows[0].id]);
+        console.log('[DB Seed PG] ✓ Admin migrated from admin@weekday.cx to admin@weekday.com');
+      } else {
+        await pool.query("INSERT INTO users (name, email, password_hash, role, is_active) VALUES ('Admin', 'admin@weekday.com', $1, 'admin', TRUE)", [adminHash]);
+        console.log('[DB Seed PG] ✓ Admin user created: admin@weekday.com');
+      }
     }
 
-    // 2. Seed Companies & Roles from seedData.json if companies table is empty
+    // 2. Seed Companies & Roles from seedData.json if companies count < 10
     const compRes = await pool.query('SELECT COUNT(*) as cnt FROM companies');
-    if (parseInt(compRes.rows[0].cnt, 10) === 0) {
-      console.log(`[DB Seed] Seeding ${seedPairs.length} company-role pairs into PostgreSQL...`);
-      const companyMap = new Map();
+    const compCount = parseInt(compRes.rows[0].cnt, 10);
+    if (compCount < 10) {
+      console.log(`[DB Seed PG] Fast Batch Seeding ${seedPairs.length} company-role pairs into PostgreSQL (Supabase)...`);
+
+      // Clear legacy data safely
+      await pool.query('DELETE FROM user_company_assignments');
+      await pool.query('DELETE FROM company_roles');
+      await pool.query('DELETE FROM companies');
+
+      // Extract unique company names safely
+      const rawCompNames = seedPairs.map(p => (p.companyName || p.company || 'Weekday').trim());
+      const companyNames = Array.from(new Set(rawCompNames));
+
+      // Bulk Insert Companies via UNNEST
+      const compInsertRes = await pool.query(`
+        INSERT INTO companies (name, elevator_pitch, hq_location)
+        SELECT name, name || ' tech team', 'Bangalore'
+        FROM UNNEST($1::text[]) AS name
+        RETURNING id, name
+      `, [companyNames]);
+
+      const companyIdMap = new Map();
+      for (const row of compInsertRes.rows) {
+        companyIdMap.set(row.name, row.id);
+      }
+
+      // Prepare Bulk Roles Insert
+      const roleCompanyIds = [];
+      const roleTitles = [];
 
       for (const item of seedPairs) {
-        const cName = item.companyName.trim();
-        const rTitle = item.role.trim();
-
-        let companyId = companyMap.get(cName);
-        if (!companyId) {
-          const insertComp = await pool.query(
-            "INSERT INTO companies (name, elevator_pitch, hq_location) VALUES ($1, $2, 'Bangalore') RETURNING id",
-            [cName, `${cName} tech team`]
-          );
-          companyId = insertComp.rows[0].id;
-          companyMap.set(cName, companyId);
+        const cName = (item.companyName || item.company || 'Weekday').trim();
+        const rTitle = (item.role || item.roleTitle || 'Software Engineer').trim();
+        const cid = companyIdMap.get(cName);
+        if (cid) {
+          roleCompanyIds.push(cid);
+          roleTitles.push(rTitle);
         }
-
-        await pool.query(
-          "INSERT INTO company_roles (company_id, role_title) VALUES ($1, $2)",
-          [companyId, rTitle]
-        );
       }
-      console.log(`✓ Seeded ${companyMap.size} unique companies and ${seedPairs.length} roles.`);
+
+      // Bulk Insert Roles via UNNEST
+      await pool.query(`
+        INSERT INTO company_roles (company_id, role_title)
+        SELECT cid, title
+        FROM UNNEST($1::int[], $2::text[]) AS t(cid, title)
+      `, [roleCompanyIds, roleTitles]);
+
+      console.log(`✓ [DB Seed PG] Successfully batch-seeded ${companyIdMap.size} unique companies and ${roleCompanyIds.length} roles into PostgreSQL (Supabase).`);
     }
   } catch (err) {
     console.warn('[DB Seed PG] Warning:', err.message);
@@ -403,22 +289,32 @@ async function seedInitialDataSQLite() {
     const bcrypt = require('bcryptjs');
     const seedPairs = require('./seedData.json');
 
-    const userCount = sqliteDb.exec('SELECT COUNT(*) FROM users')[0]?.values[0]?.[0] || 0;
-    if (userCount === 0) {
-      const hash = bcrypt.hashSync('weekday@123', 10);
-      sqliteDb.run("INSERT INTO users (name, email, password_hash, role) VALUES ('Surad (Admin)', 'admin@weekday.cx', ?, 'admin')", [hash]);
-      sqliteDb.run("INSERT INTO users (name, email, password_hash, role) VALUES ('Priya Sharma (AM)', 'priya@weekday.cx', ?, 'account_manager')", [hash]);
-      sqliteDb.run("INSERT INTO users (name, email, password_hash, role) VALUES ('Rohan Mehta (AM)', 'rohan@weekday.cx', ?, 'account_manager')", [hash]);
+    const adminHash = bcrypt.hashSync('admin', 10);
+    const adminUser = sqliteDb.exec("SELECT id FROM users WHERE LOWER(email) = 'admin@weekday.com'")[0]?.values?.[0]?.[0];
+    if (adminUser) {
+      sqliteDb.run("UPDATE users SET password_hash = ?, is_active = 1, role = 'admin' WHERE id = ?", [adminHash, adminUser]);
+    } else {
+      const legacyAdmin = sqliteDb.exec("SELECT id FROM users WHERE LOWER(email) = 'admin@weekday.cx'")[0]?.values?.[0]?.[0];
+      if (legacyAdmin) {
+        sqliteDb.run("UPDATE users SET email = 'admin@weekday.com', password_hash = ?, is_active = 1, role = 'admin' WHERE id = ?", [adminHash, legacyAdmin]);
+      } else {
+        sqliteDb.run("INSERT INTO users (name, email, password_hash, role, is_active) VALUES ('Admin', 'admin@weekday.com', ?, 'admin', 1)", [adminHash]);
+      }
     }
 
     const compCount = sqliteDb.exec('SELECT COUNT(*) FROM companies')[0]?.values[0]?.[0] || 0;
-    if (compCount === 0) {
-      console.log(`[DB Seed] Seeding ${seedPairs.length} company-role pairs into SQLite...`);
+    if (compCount < 100) {
+      console.log(`[DB Seed SQLite] Seeding ${seedPairs.length} company-role pairs into SQLite...`);
+      sqliteDb.run('DELETE FROM user_company_assignments');
+      sqliteDb.run('DELETE FROM company_roles');
+      sqliteDb.run('DELETE FROM companies');
+
+      sqliteDb.run('BEGIN TRANSACTION');
       const companyMap = new Map();
 
       for (const item of seedPairs) {
-        const cName = item.companyName.trim();
-        const rTitle = item.role.trim();
+        const cName = (item.companyName || item.company || 'Weekday').trim();
+        const rTitle = (item.role || item.roleTitle || 'Software Engineer').trim();
 
         let companyId = companyMap.get(cName);
         if (!companyId) {
@@ -429,7 +325,8 @@ async function seedInitialDataSQLite() {
 
         sqliteDb.run("INSERT INTO company_roles (company_id, role_title) VALUES (?, ?)", [companyId, rTitle]);
       }
-      console.log(`✓ Seeded ${companyMap.size} unique companies and ${seedPairs.length} roles.`);
+      sqliteDb.run('COMMIT');
+      console.log(`✓ Seeded ${companyMap.size} unique companies and ${seedPairs.length} roles into SQLite.`);
     }
   } catch (err) {
     console.warn('[DB Seed SQLite] Warning:', err.message);
@@ -443,29 +340,36 @@ function save() {
 }
 
 async function run(sql, params = []) {
-  if (isPg) {
+  if (!sqliteDb && !pgPool) {
+    await initDb();
+  }
+  if (isPg && pgPool) {
+    const isInsert = /^\s*INSERT/i.test(sql);
     let pgSql = convertSqlForPg(sql);
-    let isInsert = pgSql.trim().toUpperCase().startsWith('INSERT ');
-    if (isInsert && !pgSql.toUpperCase().includes(' RETURNING ')) {
+    if (isInsert && !/RETURNING/i.test(pgSql)) {
       pgSql += ' RETURNING id';
     }
     const res = await pgPool.query(pgSql, params);
     const lastInsertRowid = isInsert ? (res.rows[0]?.id || null) : null;
     return { lastInsertRowid, changes: res.rowCount };
-  } else {
+  } else if (sqliteDb) {
     sqliteDb.run(sql, params);
     const lastInsertRowid = sqliteDb.exec('SELECT last_insert_rowid() as id')[0]?.values[0]?.[0] ?? null;
     save();
     return { lastInsertRowid, changes: sqliteDb.getRowsModified() };
   }
+  return { lastInsertRowid: null, changes: 0 };
 }
 
 async function all(sql, params = []) {
-  if (isPg) {
+  if (!sqliteDb && !pgPool) {
+    await initDb();
+  }
+  if (isPg && pgPool) {
     const pgSql = convertSqlForPg(sql);
     const res = await pgPool.query(pgSql, params);
     return res.rows;
-  } else {
+  } else if (sqliteDb) {
     const stmt = sqliteDb.prepare(sql);
     const rows = [];
     stmt.bind(params);
@@ -475,6 +379,7 @@ async function all(sql, params = []) {
     stmt.free();
     return rows;
   }
+  return [];
 }
 
 async function get(sql, params = []) {
@@ -482,4 +387,4 @@ async function get(sql, params = []) {
   return rows.length ? rows[0] : null;
 }
 
-module.exports = { initDb, run, all, get, save };
+module.exports = { initDb, run, all, get, save, getIsPg: () => isPg };

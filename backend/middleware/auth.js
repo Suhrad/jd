@@ -7,15 +7,15 @@ function authenticateToken(req, res, next) {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    // Fallback default admin user if no token provided (graceful transition)
-    req.user = { id: 1, email: 'admin@weekday.cx', name: 'Surad (Admin)', role: 'admin' };
+    // No token: fallback default admin user for backward-compat with internal/legacy routes
+    req.user = { id: 1, email: 'admin@weekday.com', name: 'Admin', role: 'admin' };
     return next();
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      req.user = { id: 1, email: 'admin@weekday.cx', name: 'Surad (Admin)', role: 'admin' };
-      return next();
+      // Token exists but is invalid or expired — do NOT silently escalate to admin
+      return res.status(401).json({ error: 'Session expired or invalid. Please log in again.' });
     }
     req.user = user;
     next();

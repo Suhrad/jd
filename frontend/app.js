@@ -16,6 +16,14 @@ let allCompaniesCache      = [];
 let currentCompanyId       = 1;
 let currentUser            = null;
 
+// ── Admin State ─────────────────────────────────────────────────────────────
+let adminCompanyCatalogCache = [];
+let adminUsersCache          = [];
+let activeCatalogData        = [];
+let catalogCurrentPage       = 1;
+const catalogPageSize        = 50;
+
+
 // ── Auth Helpers ───────────────────────────────────────────────────────────
 function getAuthToken() {
   return localStorage.getItem('weekday_token');
@@ -34,35 +42,78 @@ window.handleLogout = function() {
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  console.log('[boot] DOMContentLoaded fired');
   injectSvgGradients();
   setConnection('initializing', 'Initializing...');
 
-  // Auth check
+  // Auth check — if no token at all, go to login immediately
   const token = getAuthToken();
+  console.log('[boot] token exists:', !!token);
   if (!token) {
+    const targetHash = window.location.hash || '';
+    if (targetHash && targetHash !== '#/screener/role' && targetHash !== '#/admin/portfolios') {
+      sessionStorage.setItem('redirect_after_login', targetHash);
+    }
     window.location.href = '/login.html';
     return;
   }
 
+  // Restore user synchronously from localStorage on Frame 1 (Instant 0ms UI Render)
   const storedUser = localStorage.getItem('weekday_user');
+  console.log('[boot] storedUser exists:', !!storedUser);
   if (storedUser) {
-    try {
-      currentUser = JSON.parse(storedUser);
-      const nameBadge = document.getElementById('userNameBadge');
-      if (nameBadge) nameBadge.innerText = `👤 ${currentUser.name} (${currentUser.role === 'admin' ? 'Admin' : 'AM'})`;
-      
-      const adminBtn = document.getElementById('adminTabBtn');
-      if (adminBtn && currentUser.role === 'admin') {
-        adminBtn.style.display = 'inline-flex';
-      }
-    } catch (_) {}
+    try { currentUser = JSON.parse(storedUser); } catch (_) {}
+  }
+  console.log('[boot] currentUser after localStorage restore:', currentUser?.email, currentUser?.role);
+
+  function renderUserUI() {
+    console.log('[boot] renderUserUI called, currentUser:', currentUser?.email);
+    if (!currentUser) return;
+    const nameBadge = document.getElementById('userNameBadge');
+    const cleanName = (currentUser.name || 'User').replace(/\(Admin\)|\(AM\)/gi, '').trim();
+    if (nameBadge) nameBadge.innerText = `👤 ${cleanName} (${currentUser.role === 'admin' ? 'Admin' : 'AM'})`;
+    console.log('[boot] calling handleRoute, hash:', window.location.hash);
+    handleRoute();
   }
 
-  await loadCompanies();
-  await loadLatestJob();
-  await loadCandidates();
-  await initVapi();
-  setupJdAutoExtractor();
+  if (currentUser) {
+    renderUserUI();
+  }
+
+  // Verify token & sync user profile in background
+  try {
+    console.log('[boot] fetching /api/auth/me...');
+    const meRes = await fetch('/api/auth/me', { headers: getAuthHeaders() });
+    console.log('[boot] /api/auth/me status:', meRes.status);
+    if (!meRes.ok) {
+      localStorage.removeItem('weekday_token');
+      localStorage.removeItem('weekday_user');
+      window.location.href = '/login.html';
+      return;
+    }
+    const meData = await meRes.json();
+    currentUser = meData.user;
+    localStorage.setItem('weekday_user', JSON.stringify(currentUser));
+    console.log('[boot] /api/auth/me OK, user:', currentUser.email, currentUser.role);
+    renderUserUI();
+  } catch (e) {
+    console.log('[boot] /api/auth/me catch:', e.message);
+    if (currentUser) renderUserUI();
+  }
+
+  if (currentUser) {
+    // Background data fetching (non-blocking)
+    if (currentUser.role === 'admin') {
+      loadAdminUserList().catch(e => console.error('loadAdminUserList error:', e));
+      loadAdminCompanyCatalog().catch(e => console.error('loadAdminCompanyCatalog error:', e));
+      loadAdminAnalytics().catch(e => console.error('loadAdminAnalytics error:', e));
+    } else {
+      loadCompanies().catch(e => console.error('loadCompanies error:', e));
+      loadCandidates().catch(e => console.error('loadCandidates error:', e));
+      initVapi().catch(e => console.error('initVapi error:', e));
+      setupJdAutoExtractor();
+    }
+  }
 
   // Close company dropdown when clicking outside
   document.addEventListener('click', (e) => {
@@ -116,9 +167,9 @@ function renderCompanyDropdown(companies) {
   }
 
   dropdown.innerHTML = companies.map(c => `
-    <div onclick="selectCompany(${c.id}, '${escapeQuotes(c.name)}', '${escapeQuotes(c.elevator_pitch || '')}')" style="padding:10px 14px; font-size:13px; color:#e2e8f0; cursor:pointer; border-bottom:1px solid rgba(255,255,255,0.05);" onmouseover="this.style.background='rgba(139,92,246,0.2)'" onmouseout="this.style.background='transparent'">
-      <strong style="color:white; display:block;">${c.name}</strong>
-      <span style="font-size:11px; color:#94a3b8;">${c.hq_location || 'Bangalore'} ${c.elevator_pitch ? '• ' + c.elevator_pitch.slice(0, 50) : ''}</span>
+    <div onclick="selectCompany(${c.id}, '${escapeQuotes(c.name)}', '')" style="padding:10px 14px; font-size:13px; color:#09090b; cursor:pointer; border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+      <strong style="color:#09090b; display:block; font-weight:600;">${c.name}</strong>
+      <span style="font-size:11px; color:#64748b;">${c.hq_location || 'Bangalore'}</span>
     </div>
   `).join('');
 }
@@ -139,16 +190,13 @@ window.selectCompany = async function(id, name, pitch) {
   if (dropdown) dropdown.style.display = 'none';
 
   if (pitchPill) {
-    if (pitch) {
-      pitchPill.innerText = `🏢 ${name} — ${pitch}`;
-      pitchPill.style.display = 'block';
-    } else {
-      pitchPill.style.display = 'none';
-    }
+    pitchPill.style.display = 'none';
   }
 
   await loadRolesForCompany(id);
 };
+
+let currentCompanyRolesCache = [];
 
 async function loadRolesForCompany(companyId) {
   const roleSelect = document.getElementById('roleTitleSelect');
@@ -157,13 +205,14 @@ async function loadRolesForCompany(companyId) {
   try {
     const res = await fetch(`/api/companies/${companyId}/roles`, { headers: getAuthHeaders() });
     const data = await res.json();
+    currentCompanyRolesCache = data.roles || [];
 
     let optionsHtml = '<option value="">-- Select Target Role Title --</option>';
 
     if (data.roles && data.roles.length > 0) {
       optionsHtml += data.roles.map(r => `
-        <option value="${escapeQuotes(r.title)}" ${r.hasSavedConfig ? 'style="color:#a7f3d0; font-weight:bold;"' : ''}>
-          ${r.title} ${r.hasSavedConfig ? ' (Saved Config ✓)' : ''}
+        <option value="${escapeQuotes(r.title)}">
+          ${r.title} ${r.jd_text ? ' (JD Ready ✓)' : ''}
         </option>
       `).join('');
     }
@@ -212,7 +261,16 @@ window.handleRoleSelect = async function(roleValue) {
   const roleTitle = document.getElementById('jobTitle').value;
   if (!roleTitle) return;
 
-  // Auto-fill form parameters from saved job config for (Company, Role, AM)
+  // Auto-fill form parameters & JD text from saved role config
+  const matchedRole = currentCompanyRolesCache.find(r => r.title.toLowerCase() === roleTitle.toLowerCase());
+  if (matchedRole && matchedRole.jd_text) {
+    const jdBox = document.getElementById('jdText');
+    if (jdBox) jdBox.value = matchedRole.jd_text;
+    const locBox = document.getElementById('jobLocation');
+    if (locBox && matchedRole.location) locBox.value = matchedRole.location;
+    const noticeBox = document.getElementById('maxNoticeDays');
+    if (noticeBox && matchedRole.max_notice_days) noticeBox.value = matchedRole.max_notice_days;
+  }
   try {
     const res = await fetch(`/api/jobs/by-pair?companyId=${currentCompanyId}&roleTitle=${encodeURIComponent(roleTitle)}`, {
       headers: getAuthHeaders()
@@ -240,20 +298,20 @@ function populateFormFromJob(job) {
 
   if (job.custom_questions && Array.isArray(job.custom_questions) && job.custom_questions.length > 0) {
     currentQuestionsState = job.custom_questions;
-    renderQuestionCards(currentQuestionsState);
+    renderQuestionsArchitect();
+  }
+
+  // Update URL hash state with explicit jobId parameter
+  const currentHashClean = (window.location.hash || '#/screener/role').split('?')[0];
+  if (currentHashClean.startsWith('#/screener/')) {
+    window.history.replaceState(null, '', `${currentHashClean}?jobId=${job.id}`);
   }
 }
 
 // ── Admin Panel Logic ─────────────────────────────────────────────────────
-window.openAdminPanel = async function() {
-  const modal = document.getElementById('adminPanelModal');
-  if (modal) modal.classList.remove('hidden');
-  await loadAdminUserList();
-};
 
-window.closeAdminPanel = function() {
-  const modal = document.getElementById('adminPanelModal');
-  if (modal) modal.classList.add('hidden');
+window.openAdminPanel = async function() {
+  switchTab(5);
 };
 
 async function loadAdminUserList() {
@@ -261,46 +319,112 @@ async function loadAdminUserList() {
   if (!container) return;
 
   try {
+    if (allCompaniesCache.length === 0) {
+      const resComp = await fetch('/api/companies', { headers: getAuthHeaders() });
+      const dataComp = await resComp.json();
+      if (dataComp.companies) allCompaniesCache = dataComp.companies;
+    }
+
     const res = await fetch('/api/admin/users', { headers: getAuthHeaders() });
     const data = await res.json();
 
     if (!data.users) return;
+    adminUsersCache = data.users;
 
-    container.innerHTML = data.users.map(u => {
-      const assignedIds = (u.assignedCompanies || []).map(c => c.id);
-      return `
-        <div style="background:rgba(30,41,59,0.7); border:1px solid rgba(255,255,255,0.1); padding:16px; border-radius:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <div>
-              <strong style="color:white; font-size:14px;">${u.name}</strong>
-              <span style="font-size:12px; color:#94a3b8; margin-left:8px;">(${u.email})</span>
-              <span style="font-size:11px; background:rgba(168,85,247,0.2); color:#c084fc; padding:2px 8px; border-radius:4px; margin-left:8px; font-weight:600;">${u.role.toUpperCase()}</span>
-            </div>
-            <button onclick="saveAmAssignments(${u.id})" class="btn-primary" style="padding:6px 12px; font-size:12px;">Save Assignments</button>
-          </div>
+    // Update summary stat cards
+    const amStat = document.getElementById('statTotalAMs');
+    if (amStat) amStat.innerText = adminUsersCache.length;
 
-          <div style="font-size:12px; color:#cbd5e1; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
-            <span>Assigned Companies (${assignedIds.length} / ${allCompaniesCache.length}):</span>
-            <label style="cursor:pointer; color:#a7f3d0; font-weight:600;">
-              <input type="checkbox" onchange="toggleSelectAllAmCompanies(${u.id}, this.checked)" /> Select All Companies
-            </label>
-          </div>
+    const coStat = document.getElementById('statTotalCompanies');
+    if (coStat && allCompaniesCache.length > 0) coStat.innerText = `${allCompaniesCache.length}`;
 
-          <div id="amCompGrid_${u.id}" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:6px; max-height:140px; overflow-y:auto; background:#0f172a; padding:10px; border-radius:8px;">
-            ${allCompaniesCache.map(c => `
-              <label style="font-size:11px; color:#cbd5e1; display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" class="am-comp-cb-${u.id}" value="${c.id}" ${assignedIds.includes(c.id) ? 'checked' : ''} />
-                <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.name}</span>
-              </label>
-            `).join('')}
-          </div>
-        </div>
-      `;
-    }).join('');
+    renderAmList(adminUsersCache);
   } catch (err) {
     console.error('Failed to load admin user list:', err);
   }
 }
+
+window.filterAmList = function(query) {
+  if (!query) {
+    renderAmList(adminUsersCache);
+    return;
+  }
+  const q = query.toLowerCase().trim();
+  const filtered = adminUsersCache.filter(u => 
+    (u.name || '').toLowerCase().includes(q) ||
+    (u.email || '').toLowerCase().includes(q)
+  );
+  renderAmList(filtered);
+};
+
+function renderAmList(users) {
+  const container = document.getElementById('adminUserList');
+  if (!container) return;
+
+  if (users.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:32px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0; color:#64748b;">
+        <p style="font-weight:600; font-size:14px;">No Account Managers found matching query.</p>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = users.map(u => {
+    const assignedIds = (u.assignedCompanies || []).map(c => c.id);
+    const initial = (u.name || 'A').charAt(0).toUpperCase();
+    const isSuperAdmin = u.role === 'admin';
+
+    return `
+      <div class="am-portfolio-card">
+        <div class="am-card-top">
+          <div class="am-user-meta">
+            <div class="am-avatar-pill">${initial}</div>
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="am-name-title">${u.name}</span>
+                <span class="am-role-badge">${u.role.toUpperCase()}</span>
+              </div>
+              <div class="am-email-sub">${u.email}</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button onclick="openEditAmModal(${u.id})" class="btn-secondary" style="padding:6px 12px; font-size:12px;">✏️ Edit Creds</button>
+            ${!isSuperAdmin ? `<button onclick="handleDeleteAm(${u.id}, '${u.name.replace(/'/g, "\\'")}')" class="btn-secondary" style="padding:6px 12px; font-size:12px; color:#be123c; border-color:#fecdd3;">🗑️ Remove</button>` : ''}
+            <button onclick="saveAmAssignments(${u.id})" class="btn-primary" style="padding:6px 14px; font-size:12px;">Save Portfolio</button>
+          </div>
+        </div>
+
+        <div class="am-toolbar">
+          <span>Assigned Companies (<strong style="color:var(--black);">${assignedIds.length}</strong> / ${allCompaniesCache.length})</span>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <input type="text" placeholder="Search companies..." oninput="filterCompanyGridForAm(${u.id}, this.value)" style="padding:4px 8px; font-size:11px; width:140px; border-radius:6px;" />
+            <label style="cursor:pointer; color:#047857; font-weight:700;">
+              <input type="checkbox" onchange="toggleSelectAllAmCompanies(${u.id}, this.checked)" ${assignedIds.length === allCompaniesCache.length && allCompaniesCache.length > 0 ? 'checked' : ''} /> Select All
+            </label>
+          </div>
+        </div>
+
+        <div id="amCompGrid_${u.id}" class="am-comp-grid">
+          ${allCompaniesCache.map(c => `
+            <label class="am-comp-item am-comp-item-${u.id}" data-name="${c.name.toLowerCase()}">
+              <input type="checkbox" class="am-comp-cb-${u.id}" value="${c.id}" ${assignedIds.includes(c.id) ? 'checked' : ''} />
+              <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${c.name}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.filterCompanyGridForAm = function(userId, query) {
+  const items = document.querySelectorAll(`.am-comp-item-${userId}`);
+  const q = (query || '').toLowerCase().trim();
+  items.forEach(item => {
+    const name = item.getAttribute('data-name') || '';
+    item.style.display = name.includes(q) ? 'flex' : 'none';
+  });
+};
 
 window.toggleSelectAllAmCompanies = function(userId, isChecked) {
   const cbs = document.querySelectorAll(`.am-comp-cb-${userId}`);
@@ -325,6 +449,637 @@ window.saveAmAssignments = async function(userId) {
     showToast('Failed to save assignments.', 'error');
   }
 };
+
+// Edit AM Modal & Deletion Handlers
+window.openEditAmModal = function(userId) {
+  const user = adminUsersCache.find(u => u.id === userId);
+  if (!user) return;
+  document.getElementById('editAmUserId').value = user.id;
+  document.getElementById('editAmName').value = user.name;
+  document.getElementById('editAmEmail').value = user.email;
+  document.getElementById('editAmPassword').value = '';
+  document.getElementById('editAmModal').classList.remove('hidden');
+};
+
+window.closeEditAmModal = function() {
+  document.getElementById('editAmModal').classList.add('hidden');
+};
+
+window.handleSaveAmCredentials = async function(e) {
+  e.preventDefault();
+  const userId   = document.getElementById('editAmUserId').value;
+  const name     = document.getElementById('editAmName').value.trim();
+  const email    = document.getElementById('editAmEmail').value.trim();
+  const password = document.getElementById('editAmPassword').value.trim();
+
+  try {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, email, password })
+    });
+    if (res.ok) {
+      showToast('✓ Credentials updated successfully!', 'success');
+      closeEditAmModal();
+      await loadAdminUserList();
+    } else {
+      const errData = await res.json();
+      showToast(errData.error || 'Failed to update credentials.', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to update credentials.', 'error');
+  }
+};
+
+window.handleDeleteAm = async function(userId, userName) {
+  if (!confirm(`Are you sure you want to remove Account Manager "${userName}"? This will revoke their access and clear company assignments.`)) return;
+
+  try {
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      showToast(`✓ Account Manager "${userName}" removed.`, 'success');
+      await loadAdminUserList();
+    } else {
+      const errData = await res.json();
+      showToast(errData.error || 'Failed to delete user.', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to delete user.', 'error');
+  }
+};
+
+// ── User Profile Settings Modal Handlers ───────────────────────────────────
+window.openProfileModal = function() {
+  if (!currentUser) return;
+  document.getElementById('profileNameInput').value = currentUser.name || '';
+  document.getElementById('profileEmailInput').value = currentUser.email || '';
+  document.getElementById('profilePasswordInput').value = '';
+  document.getElementById('profileConfirmPasswordInput').value = '';
+  const errorMsg = document.getElementById('profileErrorMsg');
+  if (errorMsg) errorMsg.style.display = 'none';
+  document.getElementById('editProfileModal').classList.remove('hidden');
+};
+
+window.closeProfileModal = function() {
+  document.getElementById('editProfileModal').classList.add('hidden');
+};
+
+window.handleSaveProfile = async function(e) {
+  e.preventDefault();
+  const name     = document.getElementById('profileNameInput').value.trim();
+  const email    = document.getElementById('profileEmailInput').value.trim();
+  const password = document.getElementById('profilePasswordInput').value;
+  const confirm  = document.getElementById('profileConfirmPasswordInput').value;
+  const errorMsg = document.getElementById('profileErrorMsg');
+  const btn      = document.getElementById('btnSaveProfile');
+
+  if (errorMsg) errorMsg.style.display = 'none';
+
+  if (!name) {
+    if (errorMsg) { errorMsg.innerText = 'Full name is required.'; errorMsg.style.display = 'block'; }
+    return;
+  }
+  if (!email) {
+    if (errorMsg) { errorMsg.innerText = 'Email address is required.'; errorMsg.style.display = 'block'; }
+    return;
+  }
+  if (password && password !== confirm) {
+    if (errorMsg) { errorMsg.innerText = 'New passwords do not match.'; errorMsg.style.display = 'block'; }
+    return;
+  }
+  if (password && password.length < 4) {
+    if (errorMsg) { errorMsg.innerText = 'Password must be at least 4 characters long.'; errorMsg.style.display = 'block'; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = 'Saving...';
+
+  try {
+    const res = await fetch('/api/auth/profile', {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, email, password: password || undefined })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update profile.');
+
+    // Save updated token and user object
+    localStorage.setItem('weekday_token', data.token);
+    localStorage.setItem('weekday_user', JSON.stringify(data.user));
+    currentUser = data.user;
+
+    // Update header badge
+    const nameBadge = document.getElementById('userNameBadge');
+    const cleanName = (currentUser.name || 'User').replace(/\(Admin\)|\(AM\)/gi, '').trim();
+    if (nameBadge) nameBadge.innerHTML = `👤 ${cleanName} (${currentUser.role === 'admin' ? 'Admin' : 'AM'}) ⚙️`;
+
+    showToast('✓ Profile updated successfully!', 'success');
+    closeProfileModal();
+  } catch (err) {
+    if (errorMsg) {
+      errorMsg.innerText = err.message;
+      errorMsg.style.display = 'block';
+    } else {
+      showToast(err.message, 'error');
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Save Profile Changes';
+  }
+};
+
+// ── SPA URL Deep Link Router Engine ───────────────────────────────────────
+const ROUTE_MAP = {
+  '#/screener/role':      { type: 'screener', tab: 1 },
+  '#/screener/questions': { type: 'screener', tab: 2 },
+  '#/screener/call':      { type: 'screener', tab: 3 },
+  '#/hub':                { type: 'hub',      tab: 4 },
+  '#/admin/portfolios':   { type: 'admin',    subTab: 1 },
+  '#/admin/catalog':      { type: 'admin',    subTab: 2 },
+  '#/admin/analytics':    { type: 'admin',    subTab: 3 },
+};
+
+window.navigate = function(hash) {
+  if (window.location.hash !== hash) {
+    window.location.hash = hash;
+  } else {
+    handleRoute();
+  }
+};
+
+function handleRoute() {
+  if (!currentUser) {
+    const storedUser = localStorage.getItem('weekday_user');
+    if (storedUser) {
+      try { currentUser = JSON.parse(storedUser); } catch (_) {}
+    }
+  }
+  if (!currentUser) return;
+
+  const nameBadge = document.getElementById('userNameBadge');
+  if (nameBadge) {
+    const cleanName = (currentUser.name || 'User').replace(/\(Admin\)|\(AM\)/gi, '').trim();
+    nameBadge.innerText = `👤 ${cleanName} (${currentUser.role === 'admin' ? 'Admin' : 'AM'})`;
+  }
+
+  const defaultHash = currentUser.role === 'admin' ? '#/admin/portfolios' : '#/screener/role';
+  if (!window.location.hash) {
+    window.history.replaceState(null, '', defaultHash);
+  }
+
+  const currentHash = window.location.hash || defaultHash;
+  const hashClean   = currentHash.split('?')[0];
+  const routeConfig = ROUTE_MAP[hashClean];
+
+  const screenerWork = document.getElementById('screenerWorkspace');
+  const screenerNav  = document.getElementById('screenerWizardNav');
+  const adminWork    = document.getElementById('adminWorkspace');
+  const adminNav     = document.getElementById('adminNavTabs');
+
+  if (currentUser.role === 'admin') {
+    // ADMIN GUARANTEE: Never show 3-step screener wizard nav bar or Candidate Hub button for Admin users
+    if (screenerNav) screenerNav.style.display = 'none';
+    const hubBtn = document.getElementById('tabBtn4');
+    if (hubBtn) hubBtn.style.display = 'none';
+
+    if (!routeConfig || routeConfig.type !== 'admin') {
+      if (hashClean === '#/hub') {
+        // Admin looking at Candidate Hub
+        if (adminWork)    adminWork.style.display    = 'none';
+        if (adminNav)     adminNav.style.display     = 'none';
+        if (screenerWork) screenerWork.style.display = 'block';
+
+        for (let i = 1; i <= 4; i++) {
+          const view = document.getElementById(`tabView${i}`);
+          if (view) view.classList.toggle('active', i === 4);
+        }
+        renderLeaderboardDashboard();
+        return;
+      }
+
+      // Default to admin portfolios if hash is invalid or screener route
+      window.history.replaceState(null, '', '#/admin/portfolios');
+      handleRoute();
+      return;
+    }
+
+    // Admin Operations Module View
+    if (screenerWork) screenerWork.style.display = 'none';
+    if (adminWork)    adminWork.style.display    = 'block';
+    if (adminNav)     adminNav.style.display     = 'flex';
+
+    const subTabNum = routeConfig.subTab || 1;
+    for (let i = 1; i <= 3; i++) {
+      const btn  = document.getElementById(`adminSubTabBtn${i}`);
+      const view = document.getElementById(`adminSubView${i}`);
+      if (btn)  btn.classList.toggle('active', i === subTabNum);
+      if (view) view.style.display = (i === subTabNum) ? 'block' : 'none';
+    }
+
+    if (subTabNum === 1) loadAdminUserList();
+    else if (subTabNum === 2) loadAdminCompanyCatalog();
+    else if (subTabNum === 3) loadAdminAnalytics();
+
+  } else {
+    // ACCOUNT MANAGER USER
+    if (adminWork) adminWork.style.display = 'none';
+    if (adminNav)  adminNav.style.display  = 'none';
+
+    if (routeConfig && routeConfig.type === 'admin') {
+      window.location.hash = '#/screener/role';
+      return;
+    }
+
+    const tabNum = routeConfig ? routeConfig.tab : 1;
+
+    // Screener Nav Bar stays visible across ALL 4 tabs (1, 2, 3, and 4)
+    if (screenerNav) {
+      screenerNav.style.display = 'flex';
+    }
+    if (screenerWork) screenerWork.style.display = 'block';
+
+    for (let i = 1; i <= 4; i++) {
+      const btn  = document.getElementById(`tabBtn${i}`);
+      const view = document.getElementById(`tabView${i}`);
+      if (btn)  btn.classList.toggle('active', i === tabNum);
+      if (view) view.classList.toggle('active', i === tabNum);
+    }
+
+    if (tabNum === 2) {
+      checkAndLoadDeepLinkQuestions();
+    } else if (tabNum === 4) {
+      renderLeaderboardDashboard();
+    }
+  }
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function getHashQueryParams() {
+  const hash = window.location.hash || '';
+  const qIdx = hash.indexOf('?');
+  if (qIdx === -1) return {};
+  const queryStr = hash.substring(qIdx + 1);
+  const params = new URLSearchParams(queryStr);
+  const result = {};
+  for (const [k, v] of params.entries()) {
+    result[k.toLowerCase()] = v;
+  }
+  return result;
+}
+
+let lastLoadedDeepLinkKey = '';
+
+async function checkAndLoadDeepLinkQuestions() {
+  const queryParams = getHashQueryParams();
+  const targetJobId = queryParams.jobid || queryParams.job_id || queryParams.id;
+  const targetCompanyId = queryParams.companyid || queryParams.company_id;
+  const targetRoleTitle = queryParams.role || queryParams.roletitle || queryParams.title;
+
+  if (targetJobId || (targetCompanyId && targetRoleTitle)) {
+    const key = `jobId:${targetJobId}_co:${targetCompanyId}_role:${targetRoleTitle}`;
+    if (lastLoadedDeepLinkKey === key && currentQuestionsState.length > 0) {
+      return;
+    }
+    lastLoadedDeepLinkKey = key;
+    await loadDeepLinkedJobQuestions(targetJobId, targetCompanyId, targetRoleTitle);
+  }
+}
+
+async function loadDeepLinkedJobQuestions(jobId, companyId, roleTitle) {
+  try {
+    let url = '';
+    if (jobId) {
+      url = `/api/jobs/${jobId}`;
+    } else if (companyId && roleTitle) {
+      url = `/api/jobs/by-pair?companyId=${companyId}&roleTitle=${encodeURIComponent(roleTitle)}`;
+    }
+    if (!url) return;
+
+    showToast('⏳ Loading JD questionnaire from database...', 'info');
+
+    const res = await fetch(url, { headers: getAuthHeaders() });
+    if (!res.ok) {
+      showToast('Job config not found. Architecting AI questions...', 'warning');
+      if (currentQuestionsState.length === 0) await generateScriptWithAI();
+      return;
+    }
+
+    const job = await res.json();
+    if (!job) {
+      if (currentQuestionsState.length === 0) await generateScriptWithAI();
+      return;
+    }
+
+    currentJobId = job.id;
+    if (job.company_id) currentCompanyId = job.company_id;
+
+    // Auto-populate Step 1 parameters
+    if (job.title) {
+      const titleEl = document.getElementById('jobTitle');
+      if (titleEl) titleEl.value = job.title;
+    }
+    if (job.location) {
+      const locEl = document.getElementById('location');
+      if (locEl) locEl.value = job.location;
+    }
+    if (job.max_notice_days) {
+      const noticeEl = document.getElementById('maxNoticeDays');
+      if (noticeEl) noticeEl.value = job.max_notice_days;
+    }
+    if (job.tech_stack) {
+      const techEl = document.getElementById('techStack');
+      if (techEl) techEl.value = job.tech_stack;
+    }
+    if (job.target_cpa) {
+      const cpaEl = document.getElementById('targetCpa');
+      if (cpaEl) cpaEl.value = job.target_cpa;
+    }
+    if (job.tone) setTone(job.tone);
+    if (job.jd_text) {
+      const jdEl = document.getElementById('jdText');
+      if (jdEl) jdEl.value = job.jd_text;
+    }
+
+    const companyNameEl = document.getElementById('companyNameInput');
+    if (companyNameEl && job.company_name) {
+      companyNameEl.value = job.company_name;
+    }
+
+    // Check if custom questions exist in PostgreSQL for this job
+    let questions = job.custom_questions;
+    if (typeof questions === 'string') {
+      try { questions = JSON.parse(questions); } catch (_) {}
+    }
+
+    if (Array.isArray(questions) && questions.length > 0) {
+      // PRESERVE SAVED QUESTIONS FROM DB — DO NOT REGENERATE
+      currentQuestionsState = questions;
+      renderQuestionsArchitect();
+      showToast(`✓ Loaded ${questions.length} saved questions for "${job.title}" (${job.company_name})`, 'success');
+    } else {
+      // First visit for this JD without saved questions — generate initial questions
+      showToast('Generating initial AI questions for this JD...', 'info');
+      await generateScriptWithAI();
+    }
+  } catch (err) {
+    console.error('loadDeepLinkedJobQuestions error:', err);
+    if (currentQuestionsState.length === 0) await generateScriptWithAI();
+  }
+}
+
+window.addEventListener('hashchange', handleRoute);
+
+window.switchAdminSubTab = function(subTabNum) {
+  const map = { 1: '#/admin/portfolios', 2: '#/admin/catalog', 3: '#/admin/analytics' };
+  if (map[subTabNum]) navigate(map[subTabNum]);
+};
+
+async function loadAdminCompanyCatalog() {
+  const tbody = document.getElementById('companyCatalogTableBody');
+  if (!tbody) return;
+
+  // Render from in-memory cache instantly (0ms) if available
+  if (adminCompanyCatalogCache.length > 0) {
+    activeCatalogData = adminCompanyCatalogCache;
+    const totalRolesCount = adminCompanyCatalogCache.reduce((acc, c) => acc + (c.roles ? c.roles.length : 0), 0);
+    const coStat = document.getElementById('statTotalCompanies');
+    if (coStat) coStat.innerText = adminCompanyCatalogCache.length;
+    const roleStat = document.getElementById('statTotalRoles');
+    if (roleStat) roleStat.innerText = totalRolesCount;
+
+    renderCompanyCatalogTable(adminCompanyCatalogCache);
+  } else {
+    // Show clean loading state while initial fetch completes
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="padding:32px; text-align:center; color:#64748b;">
+          <p style="font-weight:600; font-size:13.5px;">Loading master company catalog...</p>
+        </td>
+      </tr>`;
+  }
+
+  try {
+    const res = await fetch('/api/companies', { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!data.companies) return;
+
+    adminCompanyCatalogCache = data.companies;
+    allCompaniesCache = data.companies;
+    activeCatalogData = data.companies;
+
+    // Calculate total role postings dynamically
+    const totalRolesCount = adminCompanyCatalogCache.reduce((acc, c) => acc + (c.roles ? c.roles.length : 0), 0);
+
+    const coStat = document.getElementById('statTotalCompanies');
+    if (coStat) coStat.innerText = adminCompanyCatalogCache.length;
+
+    const roleStat = document.getElementById('statTotalRoles');
+    if (roleStat) roleStat.innerText = totalRolesCount;
+
+    renderCompanyCatalogTable(adminCompanyCatalogCache);
+  } catch (err) {
+    console.error('Failed to load company catalog:', err);
+  }
+} // end loadAdminCompanyCatalog
+
+// Add New Company Modal Handlers
+window.openAddCompanyModal = function() {
+  document.getElementById('newCompanyName').value = '';
+  document.getElementById('newCompanyHq').value = '';
+  document.getElementById('newCompanyRoles').value = '';
+  document.getElementById('addCompanyModal').classList.remove('hidden');
+};
+
+window.closeAddCompanyModal = function() {
+  document.getElementById('addCompanyModal').classList.add('hidden');
+};
+
+window.handleSaveNewCompany = async function(e) {
+  e.preventDefault();
+  const name       = document.getElementById('newCompanyName').value.trim();
+  const hqLocation = document.getElementById('newCompanyHq').value.trim();
+  const roles      = document.getElementById('newCompanyRoles').value.trim();
+
+  try {
+    const res = await fetch('/api/companies', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name, hqLocation, roles })
+    });
+    if (res.ok) {
+      showToast(`✓ Company ${name} added successfully!`, 'success');
+      closeAddCompanyModal();
+      adminCompanyCatalogCache = []; // reset cache to force fresh fetch
+      await loadAdminCompanyCatalog();
+    } else {
+      const errData = await res.json();
+      showToast(errData.error || 'Failed to add company.', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to add company.', 'error');
+  }
+};
+
+
+
+window.changeCatalogPage = function(delta) {
+  catalogCurrentPage += delta;
+  renderCompanyCatalogTable(activeCatalogData);
+};
+
+window.setCatalogPage = function(pageNum) {
+  catalogCurrentPage = pageNum;
+  renderCompanyCatalogTable(activeCatalogData);
+};
+
+window.filterCompanyCatalog = function(query) {
+  catalogCurrentPage = 1; // Reset to page 1 on search
+  if (!query) {
+    activeCatalogData = adminCompanyCatalogCache;
+  } else {
+    const q = query.toLowerCase().trim();
+    activeCatalogData = adminCompanyCatalogCache.filter(c => 
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.hq_location || '').toLowerCase().includes(q) ||
+      (c.elevator_pitch || '').toLowerCase().includes(q)
+    );
+  }
+  renderCompanyCatalogTable(activeCatalogData);
+};
+
+function renderCompanyCatalogTable(companies) {
+  if (Array.isArray(companies) && companies.length > 0) {
+    activeCatalogData = companies;
+  } else if (!activeCatalogData || activeCatalogData.length === 0) {
+    activeCatalogData = adminCompanyCatalogCache || [];
+  }
+  const tbody = document.getElementById('companyCatalogTableBody');
+  const pagContainer = document.getElementById('companyCatalogPagination');
+  if (!tbody) return;
+
+  if (activeCatalogData.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="4" style="padding:24px; text-align:center; color:#64748b;">No companies found matching search query.</td>
+      </tr>`;
+    if (pagContainer) pagContainer.innerHTML = '';
+    return;
+  }
+
+  // Calculate Pagination (50 entries per page)
+  const totalPages = Math.ceil(activeCatalogData.length / catalogPageSize) || 1;
+  if (catalogCurrentPage > totalPages) catalogCurrentPage = totalPages;
+  if (catalogCurrentPage < 1) catalogCurrentPage = 1;
+
+  const startIndex = (catalogCurrentPage - 1) * catalogPageSize;
+  const pageItems = activeCatalogData.slice(startIndex, startIndex + catalogPageSize);
+
+  tbody.innerHTML = pageItems.map(c => {
+    const roles = c.roles || [];
+    const rolesList = roles.slice(0, 6).map(r => `<span style="padding:2px 7px; border-radius:4px; background:#f1f5f9; border:1px solid #cbd5e1; font-weight:600; font-size:11px; margin-right:4px; display:inline-block; margin-bottom:4px; color:#1e293b;">${r}</span>`).join('');
+    const moreCount = roles.length > 6 ? `<span style="font-size:11px; color:#64748b; font-weight:700;">+${roles.length - 6} more</span>` : '';
+
+    return `
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 12px 16px; font-weight: 700; color: var(--black); font-size: 14px;">${c.name}</td>
+        <td style="padding: 12px 16px; color: #475569;">${c.hq_location || 'Bangalore'}</td>
+        <td style="padding: 12px 16px; color: #64748b; font-size: 12.5px;">${c.elevator_pitch && !c.elevator_pitch.endsWith('tech team') ? c.elevator_pitch : 'Core Engineering'}</td>
+        <td style="padding: 12px 16px;">${rolesList} ${moreCount}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // Render Pagination Controls Below Table
+  if (pagContainer) {
+    const startItemNum = startIndex + 1;
+    const endItemNum = Math.min(startIndex + catalogPageSize, activeCatalogData.length);
+
+    pagContainer.innerHTML = `
+      <div style="font-size:13px; color:#64748b; font-weight:500;">
+        Showing <strong style="color:var(--black);">${startItemNum}</strong> to <strong style="color:var(--black);">${endItemNum}</strong> of <strong style="color:var(--black);">${activeCatalogData.length}</strong> companies
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn-secondary" onclick="changeCatalogPage(-1)" ${catalogCurrentPage === 1 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} style="padding:6px 14px; font-size:12.5px;">← Previous</button>
+        <span style="font-size:13px; font-weight:600; color:#334155; padding:0 8px;">Page ${catalogCurrentPage} of ${totalPages}</span>
+        <button class="btn-secondary" onclick="changeCatalogPage(1)" ${catalogCurrentPage === totalPages ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} style="padding:6px 14px; font-size:12.5px;">Next →</button>
+      </div>
+    `;
+  }
+}
+
+async function loadAdminAnalytics() {
+  const container = document.getElementById('adminAnalyticsContent');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/candidates', { headers: getAuthHeaders() });
+    const candidates = await res.json();
+
+    const totalCalls = candidates.length;
+    const completedCalls = candidates.filter(c => c.status === 'completed');
+    const passes = completedCalls.filter(c => c.recommendation && (c.recommendation.startsWith('Yes') || c.recommendation.startsWith('Conditional')));
+    const passRate = completedCalls.length > 0 ? Math.round((passes.length / completedCalls.length) * 100) : 0;
+
+    container.innerHTML = `
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px; margin-bottom:24px;">
+        <div style="background:#f8fafc; border:1.5px solid var(--border); padding:16px; border-radius:10px;">
+          <div style="font-size:12px; color:#64748b; font-weight:600;">Total Conducted Screening Calls</div>
+          <div style="font-size:24px; font-weight:800; color:var(--black); font-family:'Outfit',sans-serif; margin-top:4px;">${totalCalls}</div>
+        </div>
+        <div style="background:#f8fafc; border:1.5px solid var(--border); padding:16px; border-radius:10px;">
+          <div style="font-size:12px; color:#64748b; font-weight:600;">Completed Evaluations</div>
+          <div style="font-size:24px; font-weight:800; color:var(--black); font-family:'Outfit',sans-serif; margin-top:4px;">${completedCalls.length}</div>
+        </div>
+        <div style="background:#f8fafc; border:1.5px solid var(--border); padding:16px; border-radius:10px;">
+          <div style="font-size:12px; color:#64748b; font-weight:600;">Candidate Qualification Pass Rate</div>
+          <div style="font-size:24px; font-weight:800; color:#059669; font-family:'Outfit',sans-serif; margin-top:4px;">${passRate}%</div>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto; border:1.5px solid var(--border); border-radius:10px; background:#ffffff;">
+        <table style="width:100%; border-collapse:collapse; text-align:left; font-size:13px;">
+          <thead>
+            <tr style="background:#f8fafc; border-bottom:1.5px solid var(--border); color:#475569; font-weight:700;">
+              <th style="padding:10px 14px;">Candidate Name</th>
+              <th style="padding:10px 14px;">Role &amp; Company</th>
+              <th style="padding:10px 14px;">Overall Score</th>
+              <th style="padding:10px 14px;">Tech Score</th>
+              <th style="padding:10px 14px;">Comm Score</th>
+              <th style="padding:10px 14px;">Recommendation</th>
+              <th style="padding:10px 14px; text-align:right;">Detailed Call Report</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${candidates.length === 0 ? `
+              <tr><td colspan="7" style="padding:20px; text-align:center; color:#64748b;">No call evaluations recorded yet. Conduct a live call in Step 3 to see live reports.</td></tr>
+            ` : candidates.map(c => `
+              <tr style="border-bottom:1px solid var(--border); cursor:pointer;" onclick="window.onCandidateClick(${c.id})" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                <td style="padding:10px 14px; font-weight:700; color:var(--black); font-size:13.5px;">${c.name || 'Candidate'}</td>
+                <td style="padding:10px 14px; color:#475569;">${c.job_title || 'Software Engineer'} ${c.company_name ? `@ ${c.company_name}` : ''}</td>
+                <td style="padding:10px 14px; font-weight:800; color:var(--black);">${c.overall_score || 0}/10</td>
+                <td style="padding:10px 14px; color:#475569;">${c.technical_score || 0}/10</td>
+                <td style="padding:10px 14px; color:#475569;">${c.communication_score || 0}/10</td>
+                <td style="padding:10px 14px;">
+                  <span style="padding:3px 9px; border-radius:6px; font-weight:700; font-size:11.5px; ${c.recommendation && (c.recommendation.startsWith('Yes') || c.recommendation.startsWith('Strong') || c.recommendation.startsWith('Conditional')) ? 'background:#ecfdf5; color:#047857;' : 'background:#fff1f2; color:#be123c;'}">${c.recommendation || 'Pending'}</span>
+                </td>
+                <td style="padding:10px 14px; text-align:right;">
+                  <button class="btn-secondary" onclick="event.stopPropagation(); window.onCandidateClick(${c.id})" style="padding:5px 12px; font-size:12px; font-weight:600;">🎙️ View Recording &amp; Transcript →</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    console.error('Failed to load admin analytics:', err);
+  }
+}
 
 window.handleCreateUser = async function(e) {
   e.preventDefault();
@@ -374,16 +1129,45 @@ async function initVapi() {
 
 // ── Navigation Tab Switcher ────────────────────────────────────────────────
 window.switchTab = function (tabNum) {
-  for (let i = 1; i <= 4; i++) {
-    const btn  = document.getElementById(`tabBtn${i}`);
-    const view = document.getElementById(`tabView${i}`);
-    if (btn)  btn.classList.toggle('active', i === tabNum);
-    if (view) view.classList.toggle('active', i === tabNum);
+  // Auto-save current state on tab switch so no parameters or questions are lost
+  if (currentUser && currentUser.role !== 'admin') {
+    saveJob({ isAutoSave: true }).catch(() => {});
   }
-  if (tabNum === 4) {
-    renderLeaderboardDashboard();
+  const map = { 1: '#/screener/role', 2: '#/screener/questions', 3: '#/screener/call', 4: '#/hub' };
+  if (map[tabNum]) {
+    let targetHash = map[tabNum];
+    if (tabNum <= 3) {
+      if (currentJobId) {
+        targetHash += `?jobId=${currentJobId}`;
+      } else {
+        const companyId = currentCompanyId || 1;
+        const roleTitle = document.getElementById('jobTitle')?.value?.trim();
+        if (roleTitle) {
+          targetHash += `?companyId=${companyId}&role=${encodeURIComponent(roleTitle)}`;
+        }
+      }
+    }
+    navigate(targetHash);
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.copyAirtableDeepLink = function() {
+  let targetUrl = '';
+  if (currentJobId) {
+    targetUrl = `${window.location.origin}/index.html#/screener/questions?jobId=${currentJobId}`;
+  } else {
+    const companyId = currentCompanyId || 1;
+    const roleTitle = document.getElementById('jobTitle')?.value?.trim();
+    if (roleTitle) {
+      targetUrl = `${window.location.origin}/index.html#/screener/questions?companyId=${companyId}&role=${encodeURIComponent(roleTitle)}`;
+    } else {
+      targetUrl = `${window.location.origin}/index.html#/screener/questions`;
+    }
+  }
+
+  navigator.clipboard.writeText(targetUrl)
+    .then(() => showToast(`✓ Airtable Deep Link copied to clipboard!`, 'success'))
+    .catch(() => showToast(`Link: ${targetUrl}`, 'info'));
 };
 
 window.saveAndNext = async function (currentTab) {
@@ -413,34 +1197,18 @@ let lastSavedJdFingerprint = '';
 let isJdChanged = false;
 
 // ── Job Config ─────────────────────────────────────────────────────────────
-async function loadLatestJob() {
+// NOTE: loadLatestJob is no longer called on boot.
+// Form population is driven by company → role selection (handleRoleSelect → populateFormFromJob).
+// This function is preserved for manual/programmatic use only.
+async function loadLatestJob(companyId) {
   try {
-    const res = await fetch('/api/jobs/latest');
+    const url = companyId
+      ? `/api/jobs/latest?companyId=${companyId}`
+      : '/api/jobs/latest';
+    const res = await fetch(url, { headers: getAuthHeaders() });
     const job = await res.json();
     if (job) {
-      document.getElementById('companyName').value   = job.company_name    || 'Weekday';
-      document.getElementById('jobTitle').value      = job.title           || '';
-      document.getElementById('location').value      = job.location        || '';
-      document.getElementById('maxNoticeDays').value = job.max_notice_days || '30';
-      document.getElementById('techStack').value     = job.tech_stack      || '';
-      document.getElementById('targetCpa').value     = job.target_cpa      || '';
-      document.getElementById('jdText').value        = job.jd_text         || '';
-      
-      if (job.tone)     setTone(job.tone);
-      if (job.voice_id) document.getElementById('voiceId').value = job.voice_id;
-
-      // Fingerprint existing job to detect if user pastes a new JD later
-      lastSavedJdFingerprint = `${job.title}__${job.company_name}__${job.jd_text}`.trim();
-      isJdChanged = false;
-
-      if (Array.isArray(job.custom_questions) && job.custom_questions.length >= 7) {
-        currentQuestionsState = job.custom_questions;
-        renderQuestionsArchitect();
-      } else {
-        // Auto-generate full 7-category cards if DB had incomplete data
-        generateScriptWithAI();
-      }
-      currentJobId = job.id;
+      populateFormFromJob(job);
     }
   } catch (err) {
     console.warn('Could not load last job:', err.message);
@@ -450,7 +1218,8 @@ async function loadLatestJob() {
 // ── AI Question Generator & Copilot ────────────────────────────────────────
 window.generateScriptWithAI = async function () {
   let jdText          = document.getElementById('jdText').value.trim();
-  const companyName   = document.getElementById('companyName').value.trim() || 'Weekday';
+  const companyNameEl = document.getElementById('companyNameInput');
+  const companyName   = (companyNameEl ? companyNameEl.value.trim() : '') || 'Weekday';
   const jobTitle      = document.getElementById('jobTitle').value.trim() || 'Software Engineer / Founder Office';
   const techStack     = document.getElementById('techStack').value.trim() || 'Software Engineering';
   const copilotPrompt = document.getElementById('copilotPrompt').value.trim();
@@ -506,7 +1275,8 @@ window.promptAddAiCategoryCard = function () {
 };
 
 async function addAIQuestionTopic(promptText) {
-  const companyName = document.getElementById('companyName').value.trim();
+  const companyNameEl = document.getElementById('companyNameInput');
+  const companyName = (companyNameEl ? companyNameEl.value.trim() : '') || 'Weekday';
   const jobTitle    = document.getElementById('jobTitle').value.trim();
   const techStack   = document.getElementById('techStack').value.trim();
   const jdText      = document.getElementById('jdText').value.trim();
@@ -552,7 +1322,8 @@ window.refineSingleTopicWithAI = async function (tIdx) {
   }
 
   const topic           = currentQuestionsState[tIdx];
-  const companyName     = document.getElementById('companyName').value.trim();
+  const companyNameEl   = document.getElementById('companyNameInput');
+  const companyName     = (companyNameEl ? companyNameEl.value.trim() : '') || 'Weekday';
   const jobTitle        = document.getElementById('jobTitle').value.trim();
   const techStack       = document.getElementById('techStack').value.trim();
   const jdText          = document.getElementById('jdText').value.trim();
@@ -666,40 +1437,48 @@ function topicIconMap(category) {
 window.toggleTopicEnabled = function (tIdx, enabled) {
   currentQuestionsState[tIdx].enabled = enabled;
   renderQuestionsArchitect();
+  saveJob({ isAutoSave: true }).catch(() => {});
 };
 
 window.updateQuestionText = function (tIdx, qIdx, text) {
   currentQuestionsState[tIdx].questions[qIdx] = text;
+  saveJob({ isAutoSave: true }).catch(() => {});
 };
 
 window.deleteQuestion = function (tIdx, qIdx) {
   currentQuestionsState[tIdx].questions.splice(qIdx, 1);
   renderQuestionsArchitect();
+  saveJob({ isAutoSave: true }).catch(() => {});
 };
 
 window.addQuestionToTopic = function (tIdx) {
   currentQuestionsState[tIdx].questions.push('New custom interview question...');
   renderQuestionsArchitect();
+  saveJob({ isAutoSave: true }).catch(() => {});
 };
 
 // ── Save Job Config ────────────────────────────────────────────────────────
-window.saveJob = async function () {
+window.saveJob = async function (options = {}) {
+  const isAutoSave = options && options.isAutoSave;
   const companyNameInput = document.getElementById('companyNameInput');
   const companyName   = companyNameInput ? companyNameInput.value.trim() : 'Weekday';
   const companyId     = currentCompanyId || 1;
-  const title         = document.getElementById('jobTitle').value.trim();
-  const location      = document.getElementById('location').value.trim();
-  const maxNoticeDays = document.getElementById('maxNoticeDays').value.trim();
-  const techStack     = document.getElementById('techStack').value.trim();
-  const targetCpa     = document.getElementById('targetCpa').value.trim();
+  const title         = document.getElementById('jobTitle')?.value?.trim() || '';
+  const location      = document.getElementById('location')?.value?.trim() || 'Hybrid / Onsite';
+  const maxNoticeDays = document.getElementById('maxNoticeDays')?.value?.trim() || '30';
+  const techStack     = document.getElementById('techStack')?.value?.trim() || '';
+  const targetCpa     = document.getElementById('targetCpa')?.value?.trim() || '';
   const languageMode  = document.getElementById('languageMode')?.value || 'en-IN';
-  const voiceId       = document.getElementById('voiceId').value;
-  let jdText          = document.getElementById('jdText').value.trim();
+  const voiceId       = document.getElementById('voiceId')?.value || 'shimmer';
+  let jdText          = document.getElementById('jdText')?.value?.trim() || '';
 
-  if (!title) { showToast('Please select a Target Role Title.', 'error'); return; }
+  if (!title) {
+    if (!isAutoSave) showToast('Please select a Target Role Title.', 'error');
+    return;
+  }
   if (!jdText) {
     jdText = `Hiring for ${title} at ${companyName || 'Weekday'}. Requirements: ${techStack || 'Engineering'}.`;
-    document.getElementById('jdText').value = jdText;
+    if (document.getElementById('jdText')) document.getElementById('jdText').value = jdText;
   }
 
   try {
@@ -733,14 +1512,23 @@ window.saveJob = async function () {
     if (!res.ok) throw new Error(job.error);
 
     currentJobId = job.id;
+    const currentHashClean = (window.location.hash || '#/screener/role').split('?')[0];
+    if (currentHashClean.startsWith('#/screener/')) {
+      window.history.replaceState(null, '', `${currentHashClean}?jobId=${job.id}`);
+    }
+
     const status = document.getElementById('jobSaveStatus');
     if (status) {
       status.textContent = '✓ Config & Persona saved!';
       setTimeout(() => (status.textContent = ''), 3500);
     }
-    showToast('Screening configuration saved!', 'success');
+    if (!isAutoSave) {
+      showToast('Screening configuration saved!', 'success');
+    }
   } catch (err) {
-    showToast(`Save failed: ${err.message}`, 'error');
+    if (!isAutoSave) {
+      showToast(`Save failed: ${err.message}`, 'error');
+    }
   }
 };
 
@@ -760,7 +1548,7 @@ window.startInterview = async function () {
   try {
     const res = await fetch('/api/candidates', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name: candidateName, jobId: currentJobId, candidateBio })
     });
     const data = await res.json();
@@ -1716,8 +2504,7 @@ function setupJdAutoExtractor() {
       if (!res.ok) throw new Error('Parsing failed');
       const data = await res.json();
       
-      // Update form values
-      if (data.companyName) document.getElementById('companyName').value = data.companyName;
+      // Update form values (companyName is driven by combobox, not a free-text field)
       if (data.title)       document.getElementById('jobTitle').value    = data.title;
       if (data.location)    document.getElementById('location').value    = data.location;
       if (data.maxNoticeDays) document.getElementById('maxNoticeDays').value = data.maxNoticeDays;

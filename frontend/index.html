@@ -11,6 +11,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <!-- Inline sync auth guard: redirects immediately before module scripts load -->
+  <script>
+    (function() {
+      var token = localStorage.getItem('weekday_token');
+      if (!token) {
+        var targetHash = window.location.hash || '';
+        if (targetHash && targetHash !== '#/screener/role' && targetHash !== '#/admin/portfolios') {
+          sessionStorage.setItem('redirect_after_login', targetHash);
+        }
+        window.location.replace('/login.html');
+      }
+    })();
+  </script>
 </head>
 <body>
 
@@ -35,8 +48,8 @@
       </div>
     </div>
 
-    <!-- Navigation Tabs (3 Middle Steps) -->
-    <nav class="nav-tabs">
+    <!-- Screener Navigation Bar (4 Unified Tabs for Recruiter Workspace) -->
+    <nav class="nav-tabs" id="screenerWizardNav" style="display:none;">
       <button class="nav-tab active" id="tabBtn1" onclick="switchTab(1)">
         <span class="tab-num">1</span>
         <span>Role &amp; Persona</span>
@@ -49,31 +62,40 @@
         <span class="tab-num">3</span>
         <span>Live Call Stage</span>
       </button>
+      <button class="nav-tab" id="tabBtn4" onclick="switchTab(4)">
+        <span class="tab-num">4</span>
+        <span>Candidate Hub</span>
+      </button>
+    </nav>
+
+    <!-- Admin Suite Nav (Shown ONLY for Admins) -->
+    <nav class="nav-tabs" id="adminNavTabs" style="display:none;">
+      <button class="nav-tab active" id="adminSubTabBtn1" onclick="switchAdminSubTab(1)">
+        <span>👥 AM Portfolios</span>
+      </button>
+      <button class="nav-tab" id="adminSubTabBtn2" onclick="switchAdminSubTab(2)">
+        <span>🏢 Company &amp; Role Catalog</span>
+      </button>
+      <button class="nav-tab" id="adminSubTabBtn3" onclick="switchAdminSubTab(3)">
+        <span>📊 Org Analytics &amp; Evaluations</span>
+      </button>
     </nav>
 
     <div class="header-right">
-      <button class="nav-tab hub-tab" id="tabBtn4" onclick="switchTab(4)">
-        <span>Candidate Hub</span>
-      </button>
-
-      <button class="nav-tab admin-tab" id="adminTabBtn" onclick="openAdminPanel()" style="display:none;">
-        <span>👑 Admin Panel</span>
-      </button>
-
-      <div class="user-badge" id="userBadge" style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.06); padding:6px 12px; border-radius:8px; font-size:13px; color:#cbd5e1; border:1px solid rgba(255,255,255,0.1);">
-        <span id="userNameBadge">👤 Surad</span>
-        <button onclick="handleLogout()" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; font-weight:600; padding:2px 6px;">Logout</button>
+      <div class="user-badge" id="userBadge" style="display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px 14px; border-radius:8px; font-size:13px; color:#09090b; border:1px solid #e2e8f0; font-weight:600;">
+        <span id="userNameBadge" onclick="openProfileModal()" style="cursor:pointer; display:flex; align-items:center; gap:6px;" title="Click to edit Account Profile Settings (Name, Email, Password)">User ⚙️</span>
+        <button onclick="handleLogout()" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; font-weight:600; padding:2px 6px; margin-left:4px;">Logout</button>
       </div>
     </div>
   </header>
 
-  <!-- ========== MAIN WORKSPACE CONTAINER ========== -->
-  <div class="main-container">
+  <!-- ========== MAIN SCREENER WORKSPACE CONTAINER ========== -->
+  <div id="screenerWorkspace" class="main-container">
 
     <!-- =========================================================================
          TAB 1: ROLE & RECRUITER PERSONA SETUP
          ========================================================================= -->
-    <section class="tab-content active" id="tabView1">
+    <section class="tab-content" id="tabView1">
       <div class="wizard-card glass">
         
         <div class="wizard-header">
@@ -130,11 +152,11 @@
           <div class="form-group col-4" style="position:relative;">
             <label for="companyNameInput">🏢 Hiring Company Name</label>
             <div class="combobox-wrapper" style="position:relative;">
-              <input type="text" id="companyNameInput" placeholder="Type to search 200+ companies..." autocomplete="off" oninput="filterCompanyDropdown(this.value)" onfocus="showCompanyDropdown()" />
-              <div id="companyDropdown" class="combobox-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#1e293b; border:1px solid #475569; border-radius:8px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,0.5);"></div>
+              <input type="text" id="companyNameInput" placeholder="Search 169 hiring companies..." autocomplete="off" oninput="filterCompanyDropdown(this.value)" onfocus="showCompanyDropdown()" />
+              <div id="companyDropdown" class="combobox-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,0.1);"></div>
             </div>
             <input type="hidden" id="companyIdHidden" value="1" />
-            <div id="companyPitchPill" class="company-pitch-pill" style="display:none; margin-top:6px; font-size:11px; color:#a7f3d0; background:rgba(16,185,129,0.12); padding:4px 8px; border-radius:6px; border:1px solid rgba(16,185,129,0.2);"></div>
+            <div id="companyPitchPill" class="company-pitch-pill" style="display:none; margin-top:6px; font-size:11px; color:#047857; background:#ecfdf5; padding:4px 8px; border-radius:6px; border:1px solid #a7f3d0; font-weight:500;"></div>
           </div>
 
           <div class="form-group col-4">
@@ -610,6 +632,151 @@
 
   </div>
 
+  <!-- =========================================================================
+       ADMIN OPERATIONS SUITE (PRIMARY WORKSPACE FOR ADMIN USERS)
+       ========================================================================= -->
+  <div id="adminWorkspace" class="main-container" style="display:none;">
+    <div class="admin-dashboard-container">
+      
+      <!-- Top Banner -->
+      <div class="admin-header-banner">
+        <div>
+          <div class="admin-badge">ADMINISTRATION &amp; GOVERNANCE</div>
+          <h1 class="admin-main-title">Organization Control Suite</h1>
+          <p class="admin-sub-title">Manage Account Managers, portfolio access, company catalog, and candidate evaluations.</p>
+        </div>
+      </div>
+
+      <!-- 3 Stat Summary Cards -->
+      <div class="admin-stats-grid">
+        <div class="admin-stat-card">
+          <div class="stat-icon">🏢</div>
+          <div class="stat-info">
+            <span class="stat-label">Unique Companies</span>
+            <span class="stat-value" id="statTotalCompanies">--</span>
+          </div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="stat-icon">💼</div>
+          <div class="stat-info">
+            <span class="stat-label">Total Role Postings</span>
+            <span class="stat-value" id="statTotalRoles">--</span>
+          </div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="stat-icon">👥</div>
+          <div class="stat-info">
+            <span class="stat-label">Active Account Managers</span>
+            <span class="stat-value" id="statTotalAMs">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-MODULE 1: AM ACCOUNTS & PORTFOLIO ASSIGNMENTS -->
+      <div class="admin-sub-view" id="adminSubView1">
+        <div class="admin-main-grid">
+          
+          <!-- Left Sidebar -->
+          <div class="admin-sidebar-col">
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h3>➕ Provision Account Manager</h3>
+                <p>Add a new recruiter or AM to your organization.</p>
+              </div>
+              <form onsubmit="handleCreateUser(event)" class="admin-create-form">
+                <div class="form-group">
+                  <label for="newAmName">Full Name</label>
+                  <input type="text" id="newAmName" placeholder="e.g. Priya Sharma" required />
+                </div>
+                <div class="form-group">
+                  <label for="newAmEmail">Work Email</label>
+                  <input type="email" id="newAmEmail" placeholder="priya@weekday.com" required />
+                </div>
+                <div class="form-group">
+                  <label for="newAmPassword">Password</label>
+                  <input type="password" id="newAmPassword" placeholder="••••••••" required />
+                </div>
+                <button type="submit" class="btn-primary" style="width:100%; margin-top:8px;">
+                  Create AM Account →
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Right Content Column -->
+          <div class="admin-content-col">
+            <div class="admin-card">
+              <div class="admin-card-header-flex">
+                <div>
+                  <h3>👥 Account Manager Portfolios</h3>
+                  <p>Manage company permissions and portfolio assignments per user.</p>
+                </div>
+                <div style="min-width: 260px;">
+                  <input type="text" id="amSearchInput" placeholder="Filter AMs by name or email..." oninput="filterAmList(this.value)" style="padding: 9px 14px; font-size: 13px;" />
+                </div>
+              </div>
+
+              <div id="adminUserList" class="admin-am-list-container">
+                <!-- Dynamically rendered AM cards -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- SUB-MODULE 2: 169 COMPANIES & 731 ROLES CATALOG -->
+      <div class="admin-sub-view" id="adminSubView2" style="display:none;">
+        <div class="admin-card">
+          <div class="admin-card-header-flex">
+            <div>
+              <h3>🏢 Master Company &amp; Role Catalog</h3>
+              <p>Browse all master companies and active open role postings.</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+              <input type="text" id="catalogSearchInput" placeholder="Search companies or location..." oninput="filterCompanyCatalog(this.value)" style="padding: 9px 14px; font-size: 13px; width:220px;" />
+              <button class="btn-primary" onclick="openAddCompanyModal()" style="padding:8px 16px; font-size:13px; white-space:nowrap;">➕ Add New Company &amp; Role</button>
+            </div>
+          </div>
+
+          <div style="overflow-x: auto; border: 1.5px solid var(--border); border-radius: 12px; background: #ffffff;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+              <thead>
+                <tr style="background: #f8fafc; border-bottom: 1.5px solid var(--border); color: #475569; font-weight: 700;">
+                  <th style="padding: 12px 16px;">Company Name</th>
+                  <th style="padding: 12px 16px;">HQ / Location</th>
+                  <th style="padding: 12px 16px;">Tech Stack Pitch</th>
+                  <th style="padding: 12px 16px;">Predefined Roles</th>
+                </tr>
+              </thead>
+              <tbody id="companyCatalogTableBody">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+          <div id="companyCatalogPagination" style="display:flex; align-items:center; justify-content:space-between; padding:14px 4px; margin-top:8px;">
+            <!-- Dynamically rendered pagination controls -->
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-MODULE 3: ORG CANDIDATE ANALYTICS -->
+      <div class="admin-sub-view" id="adminSubView3" style="display:none;">
+        <div class="admin-card">
+          <div class="admin-card-header">
+            <h3>📊 Organization Candidate Screening Analytics</h3>
+            <p>Cross-AM evaluation intelligence, candidate leaderboard, and call status breakdown.</p>
+          </div>
+
+          <div id="adminAnalyticsContent">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ========== RESULTS MODAL ========== -->
   <div class="modal-overlay hidden" id="resultsModal" onclick="handleModalClick(event)">
     <div class="modal glass" id="modalContent">
@@ -756,50 +923,96 @@
     </div>
   </div>
 
-  <!-- Admin Panel Modal -->
-  <div class="modal-overlay hidden" id="adminPanelModal">
-    <div class="modal-container" style="max-width: 800px; background:#0f172a; color:#e2e8f0; border:1px solid rgba(255,255,255,0.12);">
-      <div class="modal-header">
-        <h2>👑 Admin Control Panel — Account Managers &amp; Company Assignments</h2>
-        <button class="modal-close" onclick="closeAdminPanel()">✕</button>
+  <!-- Edit AM Credentials Modal -->
+  <div class="modal-overlay hidden" id="editAmModal">
+    <div class="modal-container" style="max-width: 480px; background:#ffffff; border:1px solid #e2e8f0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); border-radius:14px; overflow:hidden;">
+      <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding:16px 20px;">
+        <h2 style="font-size:16px; font-weight:700; color:#09090b;">✏️ Edit Account Manager Credentials</h2>
+        <button class="modal-close" onclick="closeEditAmModal()">✕</button>
       </div>
-      <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-        
-        <!-- Add New AM Section -->
-        <div style="background:rgba(255,255,255,0.04); padding:16px; border-radius:12px; margin-bottom:24px; border:1px solid rgba(255,255,255,0.08);">
-          <h3 style="margin-top:0; font-size:15px; color:#c084fc;">➕ Create New Account Manager Account</h3>
-          <form onsubmit="handleCreateUser(event)" style="display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:10px; align-items:end;">
-            <div>
-              <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Full Name</label>
-              <input type="text" id="newAmName" placeholder="e.g. Priya Sharma" required style="width:100%; padding:8px 12px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px;" />
-            </div>
-            <div>
-              <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Work Email</label>
-              <input type="email" id="newAmEmail" placeholder="priya@weekday.cx" required style="width:100%; padding:8px 12px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px;" />
-            </div>
-            <div>
-              <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Password</label>
-              <input type="password" id="newAmPassword" placeholder="••••••••" required style="width:100%; padding:8px 12px; background:#1e293b; border:1px solid #475569; color:white; border-radius:6px;" />
-            </div>
-            <button type="submit" class="btn-primary" style="padding:9px 16px;">Create AM</button>
-          </form>
+      <form onsubmit="handleSaveAmCredentials(event)" style="padding:20px; display:flex; flex-direction:column; gap:14px;">
+        <input type="hidden" id="editAmUserId" />
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Full Name</label>
+          <input type="text" id="editAmName" required style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
         </div>
-
-        <!-- Account Managers List & Assignments -->
-        <div>
-          <h3 style="font-size:15px; color:#a7f3d0; margin-bottom:12px;">👥 Account Managers &amp; Assigned Companies</h3>
-          <div id="adminUserList" style="display:flex; flex-direction:column; gap:16px;">
-            <!-- Rendered dynamically -->
-          </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Work Email</label>
+          <input type="email" id="editAmEmail" required style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
         </div>
-
-      </div>
-      <div class="modal-footer">
-        <button class="btn-secondary" onclick="closeAdminPanel()">Close Admin Panel</button>
-      </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">New Password <span style="font-weight:400; color:#64748b;">(leave blank to keep current)</span></label>
+          <input type="password" id="editAmPassword" placeholder="••••••••" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:12px;">
+          <button type="button" class="btn-secondary" onclick="closeEditAmModal()" style="padding:8px 16px; font-size:13px;">Cancel</button>
+          <button type="submit" class="btn-primary" style="padding:8px 18px; font-size:13px;">Save Changes</button>
+        </div>
+      </form>
     </div>
   </div>
 
-  <script type="module" src="app.js"></script>
+  <!-- Add New Company Modal -->
+  <div class="modal-overlay hidden" id="addCompanyModal">
+    <div class="modal-container" style="max-width: 480px; background:#ffffff; border:1px solid #e2e8f0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); border-radius:14px; overflow:hidden;">
+      <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding:16px 20px;">
+        <h2 style="font-size:16px; font-weight:700; color:#09090b;">➕ Add New Company &amp; Role Postings</h2>
+        <button class="modal-close" onclick="closeAddCompanyModal()">✕</button>
+      </div>
+      <form onsubmit="handleSaveNewCompany(event)" style="padding:20px; display:flex; flex-direction:column; gap:14px;">
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Company Name</label>
+          <input type="text" id="newCompanyName" placeholder="e.g. Perplexity AI" required style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">HQ / Location</label>
+          <input type="text" id="newCompanyHq" placeholder="e.g. San Francisco / Remote" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Target Role Titles <span style="font-weight:400; color:#64748b;">(comma separated)</span></label>
+          <input type="text" id="newCompanyRoles" placeholder="e.g. Staff AI Engineer, Senior SRE, Product Ops" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:12px;">
+          <button type="button" class="btn-secondary" onclick="closeAddCompanyModal()" style="padding:8px 16px; font-size:13px;">Cancel</button>
+          <button type="submit" class="btn-primary" style="padding:8px 18px; font-size:13px;">Save Company &amp; Roles</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Profile Modal (Name, Email, Password) -->
+  <div class="modal-overlay hidden" id="editProfileModal">
+    <div class="modal-container" style="max-width: 460px; background:#ffffff; border:1px solid #e2e8f0; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15); border-radius:14px; overflow:hidden;">
+      <div class="modal-header" style="border-bottom: 1px solid #e2e8f0; padding:16px 20px; display:flex; align-items:center; justify-content:space-between;">
+        <h2 style="font-size:16px; font-weight:700; color:#09090b;">👤 Account Profile Settings</h2>
+        <button class="modal-close" onclick="closeProfileModal()" style="background:none; border:none; font-size:18px; cursor:pointer; color:#64748b;">✕</button>
+      </div>
+      <form onsubmit="handleSaveProfile(event)" style="padding:20px; display:flex; flex-direction:column; gap:14px;">
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Full Name</label>
+          <input type="text" id="profileNameInput" required style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Email Address</label>
+          <input type="email" id="profileEmailInput" required style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">New Password <span style="font-weight:400; color:#64748b;">(leave blank to keep current)</span></label>
+          <input type="password" id="profilePasswordInput" placeholder="••••••••" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div class="form-group">
+          <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">Confirm New Password</label>
+          <input type="password" id="profileConfirmPasswordInput" placeholder="••••••••" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+        </div>
+        <div id="profileErrorMsg" style="color:#ef4444; font-size:12.5px; font-weight:600; display:none;"></div>
+        <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:8px;">
+          <button type="button" class="btn-secondary" onclick="closeProfileModal()" style="padding:8px 16px; font-size:13px;">Cancel</button>
+          <button type="submit" id="btnSaveProfile" class="btn-primary" style="padding:8px 18px; font-size:13px;">Save Profile Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="app.js?v=20260808h"></script>
 </body>
 </html>

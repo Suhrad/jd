@@ -15,49 +15,50 @@
       justify-content: center;
       min-height: 100vh;
       margin: 0;
-      background: #090d16;
-      font-family: 'Inter', sans-serif;
-      color: #e2e8f0;
+      background: #f8fafc;
+      font-family: 'Inter', -apple-system, sans-serif;
+      color: #09090b;
     }
     .login-card {
       width: 100%;
       max-width: 420px;
-      padding: 40px;
-      background: rgba(15, 23, 42, 0.75);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 44px 40px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
       border-radius: 20px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0,0,0,0.02);
     }
     .login-brand {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       justify-content: center;
     }
     .login-logo {
-      width: 42px;
-      height: 42px;
-      background: linear-gradient(135deg, #6366f1, #a855f7);
+      width: 44px;
+      height: 44px;
+      background: #09090b;
       border-radius: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
     }
     .login-title {
       font-family: 'Outfit', sans-serif;
-      font-size: 24px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      color: white;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.6px;
+      color: #09090b;
     }
     .login-subtitle {
       font-size: 14px;
-      color: #94a3b8;
+      color: #64748b;
       text-align: center;
       margin-bottom: 32px;
+      font-weight: 500;
     }
     .form-group {
       margin-bottom: 20px;
@@ -66,29 +67,29 @@
       display: block;
       font-size: 13px;
       font-weight: 600;
-      color: #cbd5e1;
+      color: #1e293b;
       margin-bottom: 8px;
     }
     .form-group input {
       width: 100%;
       padding: 12px 16px;
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
       border-radius: 10px;
-      color: white;
+      color: #09090b;
       font-size: 14px;
       outline: none;
       box-sizing: border-box;
       transition: all 0.2s;
     }
     .form-group input:focus {
-      border-color: #8b5cf6;
-      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+      border-color: #09090b;
+      box-shadow: 0 0 0 3px rgba(9, 9, 11, 0.1);
     }
     .btn-login {
       width: 100%;
       padding: 14px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      background: #09090b;
       border: none;
       border-radius: 10px;
       color: white;
@@ -97,9 +98,10 @@
       cursor: pointer;
       margin-top: 10px;
       transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     .btn-login:hover {
-      opacity: 0.95;
+      background: #18181b;
       transform: translateY(-1px);
     }
     .login-error {
@@ -108,28 +110,7 @@
       text-align: center;
       margin-top: 16px;
       display: none;
-    }
-    .quick-accounts {
-      margin-top: 24px;
-      padding-top: 20px;
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
-      font-size: 12px;
-      color: #64748b;
-      text-align: center;
-    }
-    .quick-pill {
-      display: inline-block;
-      padding: 4px 10px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 6px;
-      margin: 4px;
-      cursor: pointer;
-      color: #94a3b8;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    .quick-pill:hover {
-      background: rgba(139, 92, 246, 0.2);
-      color: white;
+      font-weight: 500;
     }
   </style>
 </head>
@@ -152,7 +133,7 @@
     <form id="loginForm" onsubmit="handleLogin(event)">
       <div class="form-group">
         <label for="email">Work Email</label>
-        <input type="email" id="email" placeholder="admin@weekday.cx" required />
+        <input type="email" id="email" placeholder="admin@weekday.com" required />
       </div>
       <div class="form-group">
         <label for="password">Password</label>
@@ -161,21 +142,9 @@
       <button type="submit" class="btn-login" id="btnLogin">Sign In to Workspace &rarr;</button>
       <div id="loginError" class="login-error"></div>
     </form>
-
-    <div class="quick-accounts">
-      <div>Quick Login Credentials:</div>
-      <span class="quick-pill" onclick="fillCreds('admin@weekday.cx', 'weekday@123')">👑 Surad (Admin)</span>
-      <span class="quick-pill" onclick="fillCreds('priya@weekday.cx', 'weekday@123')">👤 Priya (AM)</span>
-      <span class="quick-pill" onclick="fillCreds('rohan@weekday.cx', 'weekday@123')">👤 Rohan (AM)</span>
-    </div>
   </div>
 
   <script>
-    function fillCreds(email, pass) {
-      document.getElementById('email').value = email;
-      document.getElementById('password').value = pass;
-    }
-
     async function handleLogin(e) {
       e.preventDefault();
       const email = document.getElementById('email').value.trim();
@@ -197,7 +166,16 @@
 
         localStorage.setItem('weekday_token', data.token);
         localStorage.setItem('weekday_user', JSON.stringify(data.user));
-        window.location.href = '/';
+        
+        const savedRedirect = sessionStorage.getItem('redirect_after_login');
+        if (savedRedirect) {
+          sessionStorage.removeItem('redirect_after_login');
+          window.location.href = `/index.html${savedRedirect}`;
+        } else if (data.user && data.user.role === 'admin') {
+          window.location.href = '/index.html#/admin/portfolios';
+        } else {
+          window.location.href = '/index.html#/screener/role';
+        }
       } catch (err) {
         errorDiv.innerText = err.message;
         errorDiv.style.display = 'block';
