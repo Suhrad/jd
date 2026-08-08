@@ -394,6 +394,26 @@ function renderAmList(users) {
           </div>
         </div>
 
+        <!-- AM Productivity & Performance Metrics Bar -->
+        <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin: 12px 0 14px 0; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+          <div>
+            <div style="font-size:11px; color:#64748b; font-weight:600;">Configured JDs</div>
+            <div style="font-size:16px; font-weight:800; color:#09090b;">${u.metrics?.totalJdsConfigured || 0}</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:#64748b; font-weight:600;">Screening Calls</div>
+            <div style="font-size:16px; font-weight:800; color:#09090b;">${u.metrics?.totalScreeningCalls || 0}</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:#64748b; font-weight:600;">Candidate Pass Rate</div>
+            <div style="font-size:16px; font-weight:800; color:#059669;">${u.metrics?.candidatePassRate || 0}%</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:#64748b; font-weight:600;">Assigned Companies</div>
+            <div style="font-size:16px; font-weight:800; color:#2563eb;">${assignedIds.length} / ${allCompaniesCache.length}</div>
+          </div>
+        </div>
+
         <div class="am-toolbar">
           <span>Assigned Companies (<strong style="color:var(--black);">${assignedIds.length}</strong> / ${allCompaniesCache.length})</span>
           <div style="display:flex; align-items:center; gap:12px;">

@@ -8,7 +8,7 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 router.use(authenticateToken);
 router.use(requireAdmin);
 
-// GET /api/admin/users — List all Account Managers (excluding Admins)
+// GET /api/admin/users — List all Account Managers (excluding Admins) with productivity metrics
 router.get('/users', async (req, res) => {
   try {
     const users = await db.all("SELECT id, name, email, role, is_active, created_at FROM users WHERE role != 'admin' ORDER BY id ASC");
@@ -24,8 +24,35 @@ router.get('/users', async (req, res) => {
       assignMap.get(a.user_id).push({ id: a.id, name: a.name });
     }
 
+    // Compute productivity metrics per AM
+    const jobCounts = await db.all('SELECT created_by_user_id, COUNT(id) as cnt FROM jobs GROUP BY created_by_user_id');
+    const jobMap = new Map(jobCounts.map(j => [j.created_by_user_id, j.cnt]));
+
+    const candStats = await db.all(
+      `SELECT j.created_by_user_id,
+              COUNT(c.id) as total_calls,
+              SUM(CASE WHEN c.recommendation LIKE 'Yes%' OR c.recommendation LIKE 'Conditional%' THEN 1 ELSE 0 END) as passes
+       FROM candidates c
+       JOIN jobs j ON c.job_id = j.id
+       GROUP BY j.created_by_user_id`
+    );
+    const candMap = new Map(candStats.map(cs => [
+      cs.created_by_user_id,
+      { totalCalls: cs.total_calls || 0, passes: cs.passes || 0 }
+    ]));
+
     for (const u of users) {
       u.assignedCompanies = assignMap.get(u.id) || [];
+      const jCnt = jobMap.get(u.id) || 0;
+      const cStat = candMap.get(u.id) || { totalCalls: 0, passes: 0 };
+      const passRate = cStat.totalCalls > 0 ? Math.round((cStat.passes / cStat.totalCalls) * 100) : 0;
+
+      u.metrics = {
+        totalJdsConfigured: jCnt,
+        totalScreeningCalls: cStat.totalCalls,
+        candidatePassRate: passRate,
+        assignedCompaniesCount: u.assignedCompanies.length
+      };
     }
 
     res.json({ users });
