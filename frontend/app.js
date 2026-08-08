@@ -329,7 +329,7 @@ async function loadAdminUserList() {
     const data = await res.json();
 
     if (!data.users) return;
-    adminUsersCache = data.users;
+    adminUsersCache = data.users.filter(u => u.role !== 'admin');
 
     // Update summary stat cards
     const amStat = document.getElementById('statTotalAMs');

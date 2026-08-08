@@ -8,10 +8,10 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 router.use(authenticateToken);
 router.use(requireAdmin);
 
-// GET /api/admin/users — List all users (Account Managers & Admins)
+// GET /api/admin/users — List all Account Managers (excluding Admins)
 router.get('/users', async (req, res) => {
   try {
-    const users = await db.all('SELECT id, name, email, role, is_active, created_at FROM users ORDER BY id ASC');
+    const users = await db.all("SELECT id, name, email, role, is_active, created_at FROM users WHERE role != 'admin' ORDER BY id ASC");
 
     const allAssignments = await db.all(
       `SELECT uca.user_id, c.id, c.name FROM user_company_assignments uca
