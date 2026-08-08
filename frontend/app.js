@@ -912,6 +912,7 @@ window.openAddCompanyModal = function() {
   document.getElementById('newCompanyName').value = '';
   document.getElementById('newCompanyHq').value = '';
   document.getElementById('newCompanyRoles').value = '';
+  if (document.getElementById('newCompanyJd')) document.getElementById('newCompanyJd').value = '';
   document.getElementById('addCompanyModal').classList.remove('hidden');
 };
 
@@ -924,15 +925,16 @@ window.handleSaveNewCompany = async function(e) {
   const name       = document.getElementById('newCompanyName').value.trim();
   const hqLocation = document.getElementById('newCompanyHq').value.trim();
   const roles      = document.getElementById('newCompanyRoles').value.trim();
+  const jdText     = document.getElementById('newCompanyJd')?.value?.trim() || '';
 
   try {
     const res = await fetch('/api/companies', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ name, hqLocation, roles })
+      body: JSON.stringify({ name, hqLocation, roles, jdText })
     });
     if (res.ok) {
-      showToast(`✓ Company ${name} added successfully!`, 'success');
+      showToast(`✓ Company "${name}" & open roles added with full JD!`, 'success');
       closeAddCompanyModal();
       adminCompanyCatalogCache = []; // reset cache to force fresh fetch
       await loadAdminCompanyCatalog();
