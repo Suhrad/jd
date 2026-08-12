@@ -50,7 +50,9 @@ function buildStructuredOpener({
   }
   agendaTopicsText += ', and role logistics';
 
-  const estMins = enabledTopics.length <= 2 ? '3-minute' : '4-minute';
+  const activeCount = enabledTopics.length || 3;
+  const estMinsNum = Math.max(3, Math.round(activeCount * 1.5));
+  const estMins = `${estMinsNum}-minute`;
 
   return `Hi ${candidateName}! This is Maya calling from ${companyName} regarding the ${jobTitle} position. I'm reaching out for a quick ${estMins} chat where we'll cover ${agendaTopicsText}. Do you have a few minutes to talk right now?`;
 }

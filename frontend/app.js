@@ -1393,7 +1393,8 @@ function renderQuestionsArchitect() {
         <h3>No Question Script Architected Yet</h3>
         <p>Click the <strong>"⚡ Run AI Copilot"</strong> button above to parse your JD and automatically generate 7 category topic cards.</p>
       </div>`;
-    countBadge.textContent = '0 Questions Active';
+    if (countBadge) countBadge.textContent = '0 Questions Active';
+    updateRunningSummaryStats(0);
     return;
   }
 
@@ -1405,14 +1406,14 @@ function renderQuestionsArchitect() {
     totalQCount += isEnabled ? questions.length : 0;
 
     return `
-      <div class="topic-card" id="topic-card-${tIdx}">
+      <div class="topic-card ${isEnabled ? 'enabled-card' : 'disabled-card'}" id="topic-card-${tIdx}">
         <div class="topic-header">
           <div class="topic-title">
             <span>${topicIconMap(topic.category)}</span>
             <span>${esc(topic.category)}</span>
           </div>
           <div class="topic-header-actions">
-            <button class="btn-card-refine" onclick="toggleInlineRefineBox(${tIdx})" title="Refine only this card with AI">AI Refine</button>
+            <button class="btn-card-refine" onclick="toggleInlineRefineBox(${tIdx})" title="Refine entire card with prompt">Card Refine</button>
             <label class="topic-toggle">
               <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleTopicEnabled(${tIdx}, this.checked)" />
               <span>Enable</span>
@@ -1430,20 +1431,103 @@ function renderQuestionsArchitect() {
 
         ${isEnabled ? `
           <div class="topic-questions-list">
-            ${questions.map((q, qIdx) => `
-              <div class="q-item">
-                <input type="text" class="q-input" value="${esc(q)}" oninput="updateQuestionText(${tIdx}, ${qIdx}, this.value)" />
-                <button class="btn-icon-del" onclick="deleteQuestion(${tIdx}, ${qIdx})" title="Delete question">✕</button>
-              </div>
-            `).join('')}
+            ${questions.map((q, qIdx) => {
+              const lowerQ = (q || '').toLowerCase();
+              const isTechCat = topic.category.toLowerCase().includes('technical') || topic.category.toLowerCase().includes('architecture');
+              const hasLogisticsKeywords = lowerQ.includes('notice') || lowerQ.includes('ctc') || lowerQ.includes('salary') || lowerQ.includes('budget') || lowerQ.includes('location');
+              const showMismatchWarning = isTechCat && hasLogisticsKeywords;
+
+              return `
+                <div class="q-item-wrapper" style="margin-bottom:8px;">
+                  <div class="q-item" style="display:flex; align-items:center; gap:8px;">
+                    <input type="text" class="q-input" value="${esc(q)}" placeholder="Type custom interview question..." oninput="updateQuestionText(${tIdx}, ${qIdx}, this.value)" style="flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;" />
+                    <button type="button" class="btn-card-refine" onclick="refineQuestionInline(${tIdx}, ${qIdx})" style="padding:6px 12px; font-size:12px; font-weight:600; color:#2563eb; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; cursor:pointer;" title="1-Click AI Refine this question">✨ AI Refine</button>
+                    <button class="btn-icon-del" onclick="deleteQuestion(${tIdx}, ${qIdx})" title="Delete question">✕</button>
+                  </div>
+                  ${showMismatchWarning ? `
+                    <div style="font-size:11px; color:#d97706; background:#fffbeb; padding:3px 8px; border-radius:4px; margin-top:4px; display:inline-flex; align-items:center; gap:4px; border:1px solid #fde68a;">
+                      <span>💡 Topic Mismatch: Notice/Salary question detected in Tech card.</span>
+                      <button onclick="moveQuestionToCategory(${tIdx}, ${qIdx}, 'Logistics & Hard Dealbreakers')" style="background:none; border:none; color:#b45309; font-weight:700; text-decoration:underline; cursor:pointer; font-size:11px; padding:0;">Move to Logistics Card</button>
+                    </div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
             <button class="btn-add-q" onclick="addQuestionToTopic(${tIdx})">+ Add Question</button>
           </div>
         ` : ''}
       </div>`;
   }).join('');
 
-  countBadge.textContent = `${totalQCount} Questions Active`;
+  if (countBadge) countBadge.textContent = `${totalQCount} Questions Active`;
+  updateRunningSummaryStats(totalQCount);
 }
+
+function updateRunningSummaryStats(activeQCount) {
+  const countEl = document.getElementById('summaryActiveQuestionsCount');
+  const durEl   = document.getElementById('summarySyncedDuration');
+  const credEl  = document.getElementById('summaryCreditCost');
+
+  const estMins = Math.max(3, Math.round((activeQCount || 1) * 1.5));
+
+  if (countEl) countEl.textContent = `${activeQCount} Active Questions`;
+  if (durEl)   durEl.textContent   = `~${estMins} Mins (Synced to Maya)`;
+  if (credEl)  credEl.textContent  = `1 Credit per Call`;
+}
+
+window.refineQuestionInline = async function(tIdx, qIdx) {
+  const currentQ = currentQuestionsState[tIdx]?.questions[qIdx] || '';
+  const category = currentQuestionsState[tIdx]?.category || 'General';
+  const companyNameEl = document.getElementById('companyNameInput');
+  const companyName   = (companyNameEl ? companyNameEl.value.trim() : '') || 'Weekday';
+  const jobTitle      = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
+  const techStack     = document.getElementById('techStack')?.value?.trim() || '';
+
+  showToast(`⚡ AI Refining question inline...`, 'info');
+
+  try {
+    const res = await fetch('/api/jobs/refine-question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        category,
+        currentQuestion: currentQ,
+        companyName,
+        jobTitle,
+        techStack,
+        prompt: 'Make it punchier, conversational, and max 2 aspects.'
+      })
+    });
+    const data = await res.json();
+    if (data.refinedQuestion) {
+      currentQuestionsState[tIdx].questions[qIdx] = data.refinedQuestion;
+      renderQuestionsArchitect();
+      showToast(`✨ Question refined inline!`, 'success');
+      saveJob({ isAutoSave: true }).catch(() => {});
+    }
+  } catch (err) {
+    showToast('Failed to refine question inline.', 'error');
+  }
+};
+
+window.moveQuestionToCategory = function(fromTidx, fromQidx, targetCategoryName) {
+  const qText = currentQuestionsState[fromTidx]?.questions[fromQidx];
+  if (!qText) return;
+
+  // Find or create target category
+  let targetCat = currentQuestionsState.find(t => t.category.toLowerCase().includes('logistics'));
+  if (!targetCat) {
+    targetCat = { category: targetCategoryName, enabled: true, questions: [] };
+    currentQuestionsState.push(targetCat);
+  }
+
+  targetCat.questions.push(qText);
+  currentQuestionsState[fromTidx].questions.splice(fromQidx, 1);
+
+  renderQuestionsArchitect();
+  showToast(`✓ Question moved to ${targetCategoryName}!`, 'success');
+  saveJob({ isAutoSave: true }).catch(() => {});
+};
 
 function topicIconMap(category) {
   if (category.includes('Career'))     return '🔄';
@@ -1464,6 +1548,10 @@ window.toggleTopicEnabled = function (tIdx, enabled) {
 
 window.updateQuestionText = function (tIdx, qIdx, text) {
   currentQuestionsState[tIdx].questions[qIdx] = text;
+  // Recalculate stats live
+  let total = 0;
+  currentQuestionsState.forEach(t => { if (t.enabled !== false) total += (t.questions || []).length; });
+  updateRunningSummaryStats(total);
   saveJob({ isAutoSave: true }).catch(() => {});
 };
 
@@ -1474,7 +1562,7 @@ window.deleteQuestion = function (tIdx, qIdx) {
 };
 
 window.addQuestionToTopic = function (tIdx) {
-  currentQuestionsState[tIdx].questions.push('New custom interview question...');
+  currentQuestionsState[tIdx].questions.push('');
   renderQuestionsArchitect();
   saveJob({ isAutoSave: true }).catch(() => {});
 };

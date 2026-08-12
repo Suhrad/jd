@@ -241,12 +241,15 @@ async function generateInterviewQuestions({ jdText, companyName, jobTitle, techS
 6. Academics & Early Background
 7. Logistics & Hard Dealbreakers
 
-Generate 1 punchy, highly relevant question per category tailored to this exact JD and instructions.
+RULES FOR QUESTION PHRASING:
+- Every question MUST be concise, punchy, and conversational.
+- Cap each question at MAX 2 aspects (NEVER stack multiple sub-questions like "why, how, when, and what" together).
+- For Logistics & Hard Dealbreakers, phrase notice period and compensation questions politely and consultatively for candidates.
 
 Return JSON ONLY matching this exact structure:
 {
   "topics": [
-    { "category": "Category Name", "enabled": true, "questions": ["Question 1"] }
+    { "category": "Category Name", "enabled": true, "questions": ["Conversational Question 1"] }
   ]
 }`
             },
