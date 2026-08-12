@@ -2534,7 +2534,6 @@ function setupJdAutoExtractor() {
       if (data.targetCpa)   document.getElementById('targetCpa').value   = data.targetCpa;
       
       if (data.tone)        setTone(data.tone);
-      if (data.voiceId)     document.getElementById('voiceId').value = data.voiceId;
 
       if (statusEl) {
         statusEl.className = 'jd-parse-status success';
@@ -2570,5 +2569,112 @@ function setupJdAutoExtractor() {
     clearTimeout(jdParseTimeout);
     triggerExtraction();
   });
+}
+
+// ── Persona & Voice-Gender Matching ───────────────────────────────────────
+window.handlePersonaChange = function(personaKey) {
+  const voiceSelect = document.getElementById('voiceId');
+  if (!voiceSelect) return;
+
+  if (personaKey === 'david') {
+    voiceSelect.innerHTML = `
+      <option value="onyx" selected>David — OpenAI Onyx (Deep Male)</option>
+      <option value="echo">David — OpenAI Echo (Authoritative Male)</option>
+    `;
+  } else if (personaKey === 'alex') {
+    voiceSelect.innerHTML = `
+      <option value="alloy" selected>Alex — OpenAI Alloy (Neutral Professional)</option>
+    `;
+  } else {
+    // Default Maya (Female)
+    voiceSelect.innerHTML = `
+      <option value="shimmer" selected>Maya — OpenAI Shimmer (Warm Female)</option>
+      <option value="fable">Rachel — OpenAI Fable (Expressive Female)</option>
+      <option value="nova">Nova — OpenAI Nova (Professional Female)</option>
+    `;
+  }
+};
+
+// ── Audio Greeting Preview Player ──────────────────────────────────────────
+window.previewWelcomeMessage = function() {
+  const personaKey = document.getElementById('aiPersonaSelect')?.value || 'maya';
+  const companyName= document.getElementById('companyNameInput')?.value?.trim() || 'Weekday';
+  const roleTitle  = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
+  
+  const personaNames = { maya: 'Maya', david: 'David', alex: 'Alex' };
+  const pName = personaNames[personaKey] || 'Maya';
+
+  const text = `Hi, I'm ${pName} from ${companyName}! I'll be guiding your voice screening call today for the ${roleTitle} position. Let's get started whenever you're ready!`;
+
+  const btn = document.getElementById('btnPreviewGreeting');
+  if (btn) btn.innerHTML = '🔊 Playing Greeting...';
+
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = (personaKey === 'david') ? 0.85 : (personaKey === 'maya' ? 1.1 : 1.0);
+    
+    const voices = window.speechSynthesis.getVoices();
+    let selectedVoice = null;
+    if (personaKey === 'maya') {
+      selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
+    } else if (personaKey === 'david') {
+      selectedVoice = voices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('alex'));
+    }
+    if (selectedVoice) utterance.voice = selectedVoice;
+
+    utterance.onend = () => {
+      if (btn) btn.innerHTML = '▶ Preview Welcome Message';
+    };
+    utterance.onerror = () => {
+      if (btn) btn.innerHTML = '▶ Preview Welcome Message';
+    };
+
+    window.speechSynthesis.speak(utterance);
+    showToast(`🔊 Playing sample audio greeting for ${pName}...`, 'info');
+  } else {
+    showToast(`Sample Greeting: "${text}"`, 'info');
+    if (btn) btn.innerHTML = '▶ Preview Welcome Message';
+  }
+};
+
+// ── JD File Upload & Parsing Handlers ─────────────────────────────────────
+window.handleJdFileSelect = function(e) {
+  const file = e.target.files[0];
+  if (file) processJdFile(file);
+};
+
+window.handleJdFileDrop = function(e) {
+  e.preventDefault();
+  const file = e.dataTransfer?.files[0];
+  if (file) processJdFile(file);
+};
+
+function processJdFile(file) {
+  const statusEl = document.getElementById('jdParseStatus');
+  if (statusEl) {
+    statusEl.className = 'jd-parse-status loading';
+    statusEl.innerHTML = `⏳ Reading document file "${file.name}"...`;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const fileContent = evt.target.result || '';
+    const jdTextarea = document.getElementById('jdText');
+    if (jdTextarea) {
+      jdTextarea.value = fileContent;
+      // Trigger AI parsing automatically
+      const pasteEvent = new Event('input', { bubbles: true });
+      jdTextarea.dispatchEvent(pasteEvent);
+    }
+  };
+  reader.onerror = function() {
+    if (statusEl) {
+      statusEl.className = 'jd-parse-status error';
+      statusEl.innerHTML = '⚠️ Failed to read file. Please paste JD text directly.';
+    }
+  };
+  reader.readAsText(file);
 }
 

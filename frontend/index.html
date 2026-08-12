@@ -101,16 +101,118 @@
         <div class="wizard-header">
           <div>
             <h2>Step 1: Role Parameters &amp; Recruiter Persona</h2>
-            <p class="wizard-sub">Define hiring requirements, target dealbreakers, and Maya's tone of voice</p>
+            <p class="wizard-sub">Upload or paste Job Description to auto-extract parameters, then configure AI Recruiter Persona</p>
           </div>
           <button class="btn-primary" onclick="saveAndNext(1)">
             Save &amp; Continue to AI Questions &rarr;
           </button>
         </div>
 
-        <!-- Recruiter Tone Selection Cards -->
+        <!-- SECTION 1: 📄 JOB DESCRIPTION & DOCUMENT UPLOAD -->
+        <div class="form-section" style="margin-bottom:24px;">
+          <label class="section-label" style="font-size:15px; font-weight:700; color:#09090b; display:flex; align-items:center; gap:6px;">
+            📄 1. Job Description &amp; Document Upload
+          </label>
+          
+          <div id="jdDropzone" onclick="document.getElementById('jdFileInput').click()" style="border:2px dashed #cbd5e1; border-radius:12px; padding:20px; text-align:center; background:#f8fafc; cursor:pointer; transition:all 0.2s; margin-bottom:14px;" ondragover="event.preventDefault(); this.style.borderColor='#2563eb'; this.style.background='#eff6ff';" ondragleave="this.style.borderColor='#cbd5e1'; this.style.background='#f8fafc';" ondrop="handleJdFileDrop(event)">
+            <div style="font-size:26px; margin-bottom:4px;">📄</div>
+            <div style="font-weight:700; font-size:14px; color:#09090b;">Upload JD File (PDF, DOCX, TXT) or Drag &amp; Drop Here</div>
+            <div style="font-size:12px; color:#64748b; margin-top:2px;">Auto-extracts Company, Role Title, Tech Stack, Notice Period &amp; Budget</div>
+            <input type="file" id="jdFileInput" accept=".pdf,.docx,.txt" style="display:none;" onchange="handleJdFileSelect(event)" />
+          </div>
+
+          <div class="form-group">
+            <label for="jdText" style="font-weight:600; font-size:13px; color:#334155;">Or Paste Full Job Description Text</label>
+            <textarea id="jdText" placeholder="Paste full Job Description text here..." rows="6" oninput="handleJdTextInput(this.value)"></textarea>
+            <div id="jdParseStatus" class="jd-parse-status" style="margin-top:6px;"></div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: 🏢 EXTRACTED TARGET ROLE & SCREENING PARAMETERS -->
+        <div class="form-section" style="margin-bottom:24px;">
+          <label class="section-label" style="font-size:15px; font-weight:700; color:#09090b; display:flex; align-items:center; gap:6px;">
+            🏢 2. Target Role &amp; Screening Parameters
+          </label>
+
+          <div class="config-form-grid">
+            <div class="form-group col-4" style="position:relative;">
+              <label for="companyNameInput">🏢 Hiring Company Name</label>
+              <div class="combobox-wrapper" style="position:relative;">
+                <input type="text" id="companyNameInput" placeholder="Search or type company name..." autocomplete="off" oninput="filterCompanyDropdown(this.value)" onfocus="showCompanyDropdown()" />
+                <div id="companyDropdown" class="combobox-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,0.1);"></div>
+              </div>
+              <input type="hidden" id="companyIdHidden" value="1" />
+              <div id="companyPitchPill" class="company-pitch-pill" style="display:none; margin-top:6px; font-size:11px; color:#047857; background:#ecfdf5; padding:4px 8px; border-radius:6px; border:1px solid #a7f3d0; font-weight:500;"></div>
+            </div>
+
+            <div class="form-group col-4">
+              <label for="roleTitleSelect">🎯 Target Role Title</label>
+              <select id="roleTitleSelect" class="select-input" onchange="handleRoleSelect(this.value)">
+                <option value="">Select Company First or Paste JD...</option>
+              </select>
+              <input type="hidden" id="jobTitle" value="" />
+            </div>
+
+            <div class="form-group col-4">
+              <label for="location">📍 Location &amp; Work Setup</label>
+              <input type="text" id="location" placeholder="e.g. Indiranagar, Bangalore (5 Days WFO)" autocomplete="off" />
+            </div>
+
+            <div class="form-group col-4">
+              <label for="maxNoticeDays">⏳ Max Notice Period (Days)</label>
+              <input type="text" id="maxNoticeDays" placeholder="e.g. 30" autocomplete="off" />
+            </div>
+
+            <div class="form-group col-4">
+              <label for="techStack">⚡ Required Core Tech Stack</label>
+              <input type="text" id="techStack" placeholder="e.g. Python, SQL, Product Ops" autocomplete="off" />
+            </div>
+
+            <div class="form-group col-4">
+              <label for="targetCpa">💰 Target Budget (Fixed CTC)</label>
+              <input type="text" id="targetCpa" placeholder="e.g. INR 12L - 15L Fixed" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: 🎙️ AI RECRUITER VOICE & PERSONA CONFIG -->
         <div class="form-section">
-          <label class="section-label">🎭 Recruiter Screening Personality &amp; Tone</label>
+          <label class="section-label" style="font-size:15px; font-weight:700; color:#09090b; display:flex; align-items:center; gap:6px;">
+            🎙️ 3. AI Recruiter Voice &amp; Persona Config
+          </label>
+
+          <div class="config-form-grid" style="margin-bottom:16px;">
+            <div class="form-group col-4">
+              <label for="aiPersonaSelect">👤 AI Recruiter Persona</label>
+              <select id="aiPersonaSelect" class="select-input" onchange="handlePersonaChange(this.value)">
+                <option value="maya" selected>Maya ♀️ (Warm &amp; Engaging Female)</option>
+                <option value="david">David ♂️ (Deep &amp; Professional Male)</option>
+                <option value="alex">Alex ⚧ (Neutral Technical Recruiter)</option>
+              </select>
+            </div>
+
+            <div class="form-group col-4">
+              <label for="voiceId">🗣 Voice Style</label>
+              <select id="voiceId" class="select-input">
+                <option value="shimmer" selected>Shimmer — OpenAI (Warm Female)</option>
+                <option value="fable">Fable — OpenAI (Expressive Female)</option>
+                <option value="nova">Nova — OpenAI (Professional Female)</option>
+              </select>
+            </div>
+
+            <div class="form-group col-4">
+              <label for="languageMode">🌐 Recruiter Language Mode</label>
+              <select id="languageMode" class="select-input">
+                <option value="en-IN" selected>English (India / Professional)</option>
+                <option value="hinglish">Hinglish Code-Switching (Conversational Hindi/Eng)</option>
+                <option value="en-US">English (US Accent / Professional)</option>
+                <option value="en-UK">English (UK Accent / Professional)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Recruiter Tone Selection Cards -->
+          <label class="section-label" style="font-size:13px; font-weight:600; color:#475569; margin-bottom:8px; display:block;">🎭 Recruiter Screening Tone &amp; Style</label>
           <div class="tone-cards-grid">
             <div class="tone-card active" data-tone="warm" onclick="setTone('warm')">
               <div class="tone-card-icon">🤝</div>
@@ -144,73 +246,13 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Config Inputs Grid -->
-        <div class="config-form-grid">
-          
-          <div class="form-group col-4" style="position:relative;">
-            <label for="companyNameInput">🏢 Hiring Company Name</label>
-            <div class="combobox-wrapper" style="position:relative;">
-              <input type="text" id="companyNameInput" placeholder="Search 169 hiring companies..." autocomplete="off" oninput="filterCompanyDropdown(this.value)" onfocus="showCompanyDropdown()" />
-              <div id="companyDropdown" class="combobox-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:8px; z-index:100; box-shadow:0 10px 25px rgba(0,0,0,0.1);"></div>
-            </div>
-            <input type="hidden" id="companyIdHidden" value="1" />
-            <div id="companyPitchPill" class="company-pitch-pill" style="display:none; margin-top:6px; font-size:11px; color:#047857; background:#ecfdf5; padding:4px 8px; border-radius:6px; border:1px solid #a7f3d0; font-weight:500;"></div>
-          </div>
-
-          <div class="form-group col-4">
-            <label for="roleTitleSelect">🎯 Target Role Title</label>
-            <select id="roleTitleSelect" class="select-input" onchange="handleRoleSelect(this.value)">
-              <option value="">Select Company First...</option>
-            </select>
-            <input type="hidden" id="jobTitle" value="" />
-          </div>
-
-          <div class="form-group col-4">
-            <label for="location">📍 Location &amp; Work Setup</label>
-            <input type="text" id="location" placeholder="e.g. Indiranagar, Bangalore (5 Days WFO)" autocomplete="off" />
-          </div>
-
-          <div class="form-group col-4">
-            <label for="maxNoticeDays">⏳ Max Notice Period (Days)</label>
-            <input type="text" id="maxNoticeDays" placeholder="e.g. 30" value="30" autocomplete="off" />
-          </div>
-
-          <div class="form-group col-4">
-            <label for="techStack">⚡ Required Core Tech Stack</label>
-            <input type="text" id="techStack" placeholder="e.g. Python, SQL, Product Ops" autocomplete="off" />
-          </div>
-
-          <div class="form-group col-4">
-            <label for="targetCpa">💰 Target Budget (Fixed CTC)</label>
-            <input type="text" id="targetCpa" placeholder="e.g. INR 12L - 15L Fixed" autocomplete="off" />
-          </div>
-
-          <div class="form-group col-6">
-            <label for="languageMode">🌐 Recruiter Language Mode</label>
-            <select id="languageMode" class="select-input">
-              <option value="en-IN" selected>English (India / Professional)</option>
-              <option value="hinglish">Hinglish Code-Switching (Conversational Hindi/Eng)</option>
-              <option value="en-US">English (US Accent / Professional)</option>
-              <option value="en-UK">English (UK Accent / Professional)</option>
-            </select>
-          </div>
-
-          <div class="form-group col-6">
-            <label for="voiceId">🗣 Maya Voice Persona</label>
-            <select id="voiceId" class="select-input">
-              <option value="shimmer" selected>Maya — OpenAI Shimmer (Warm Female)</option>
-              <option value="alloy">Alex — OpenAI Alloy (Neutral Professional)</option>
-              <option value="fable">Rachel — OpenAI Fable (Expressive Female)</option>
-              <option value="onyx">David — OpenAI Onyx (Deep Male)</option>
-            </select>
-          </div>
-
-          <div class="form-group col-12">
-            <label for="jdText">📄 Job Description (JD)</label>
-            <textarea id="jdText" placeholder="Paste full Job Description text here..." rows="7"></textarea>
-            <div id="jdParseStatus" class="jd-parse-status"></div>
+          <!-- Combined Greeting Audio Preview Button -->
+          <div style="margin-top:16px; display:flex; align-items:center; gap:14px; background:#f8fafc; padding:12px 16px; border-radius:10px; border:1px solid #e2e8f0;">
+            <button type="button" class="btn-secondary" id="btnPreviewGreeting" onclick="previewWelcomeMessage()" style="padding:10px 20px; font-weight:700; font-size:13px; border-color:#2563eb; color:#2563eb; background:#ffffff; display:flex; align-items:center; gap:6px;">
+              ▶ Preview Welcome Message
+            </button>
+            <span style="font-size:12.5px; color:#64748b;" id="greetingPreviewLabel">Listen to sample greeting tailored to selected persona, voice &amp; tone</span>
           </div>
 
         </div>
@@ -1017,6 +1059,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=20260808k"></script>
+  <script type="module" src="app.js?v=20260812a"></script>
 </body>
 </html>
