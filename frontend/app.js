@@ -293,7 +293,22 @@ function populateFormFromJob(job) {
   if (job.target_cpa) document.getElementById('targetCpa').value = job.target_cpa;
   if (job.tone) setTone(job.tone);
   if (job.language_mode) document.getElementById('languageMode').value = job.language_mode;
-  if (job.voice_id) document.getElementById('voiceId').value = job.voice_id;
+
+  // Sync AI Persona dropdown based on saved voiceId
+  if (job.voice_id) {
+    const personaSelect = document.getElementById('aiPersonaSelect');
+    const maleVoices = ['onyx', 'echo'];
+    const neutralVoices = ['alloy'];
+    let derivedPersona = 'maya';
+    if (maleVoices.includes(job.voice_id)) derivedPersona = 'david';
+    else if (neutralVoices.includes(job.voice_id)) derivedPersona = 'alex';
+    if (personaSelect) personaSelect.value = derivedPersona;
+    // Update voice options for the derived persona, then set the saved voice
+    if (typeof handlePersonaChange === 'function') handlePersonaChange(derivedPersona);
+    const voiceEl = document.getElementById('voiceId');
+    if (voiceEl) voiceEl.value = job.voice_id;
+  }
+
   if (job.jd_text) document.getElementById('jdText').value = job.jd_text;
 
   if (job.custom_questions && Array.isArray(job.custom_questions) && job.custom_questions.length > 0) {
