@@ -2781,3 +2781,33 @@ function processJdFile(file) {
   reader.readAsText(file);
 }
 
+// ── Resume File Upload Handlers ──────────────────────────────────────────
+window.handleResumeFileSelect = function(e) {
+  const file = e.target.files[0];
+  if (file) processResumeFile(file);
+};
+
+window.handleResumeFileDrop = function(e) {
+  e.preventDefault();
+  const file = e.dataTransfer?.files[0];
+  if (file) processResumeFile(file);
+};
+
+function processResumeFile(file) {
+  showToast(`⏳ Reading candidate resume "${file.name}"...`, 'info');
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const fileContent = evt.target.result || '';
+    const bioTextarea = document.getElementById('candidateBio');
+    if (bioTextarea) {
+      bioTextarea.value = fileContent;
+      showToast(`✓ Resume "${file.name}" loaded! Maya will use this for personalized opener.`, 'success');
+    }
+  };
+  reader.onerror = function() {
+    showToast('⚠️ Failed to read resume file. Please paste bio text directly.', 'error');
+  };
+  reader.readAsText(file);
+}
+

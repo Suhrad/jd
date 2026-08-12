@@ -17,6 +17,12 @@ const LANGUAGE_DIRECTIVES = {
   'en-UK': `LANGUAGE & ACCENT: UK Professional English. Use polite, polished British English phrasing.`
 };
 
+const PERSONA_DIRECTIVES = {
+  maya: `PERSONA PHRASING (MAYA): Warm, consultative, and empathetic. Use friendly, natural transitions like "I'd love to hear about...", "That's really helpful — could you walk me through...", "That makes total sense."`,
+  david: `PERSONA PHRASING (DAVID): Direct, concise, and authoritative. Use sharp, fact-focused transitions like "Walk me through...", "Be specific about your exact contribution...", "What was the technical trade-off there?"`,
+  alex: `PERSONA PHRASING (ALEX): Analytical, structured, and objective. Use clear, structured transitions like "Let's dig into...", "Quantify that technical metric for me...", "From an architecture standpoint..."`
+};
+
 function buildStructuredOpener({
   candidateName = 'there',
   companyName   = 'Weekday',
@@ -73,11 +79,18 @@ function buildSystemPrompt(params) {
     jdMatch       = '',
     customQuestions = [],
     jdText        = '',
-    requirements  = ''
+    requirements  = '',
+    voiceId       = 'shimmer'
   } = params;
 
   const toneInstruction = TONE_INSTRUCTIONS[tone] || TONE_INSTRUCTIONS.warm;
   const langInstruction = LANGUAGE_DIRECTIVES[languageMode] || LANGUAGE_DIRECTIVES['en-IN'];
+
+  // Determine persona phrasing based on voiceId
+  let personaKey = 'maya';
+  if (['onyx', 'echo'].includes(voiceId)) personaKey = 'david';
+  else if (['alloy'].includes(voiceId)) personaKey = 'alex';
+  const personaInstruction = PERSONA_DIRECTIVES[personaKey];
 
   const structuredOpener = buildStructuredOpener(params);
 
@@ -154,6 +167,7 @@ Prompt: "Perfect! Do you have any quick questions for me about the team, role, o
 
 ${toneInstruction}
 ${langInstruction}
+${personaInstruction}
 
 HUMAN CONVERSATION DIRECTIVES:
 1. STRICT CATEGORY ADHERENCE: Ask questions ONLY from the active steps below. Skip any disabled category entirely.
@@ -170,6 +184,7 @@ HUMAN CONVERSATION DIRECTIVES:
    NEVER use: "That's amazing!", "Love that!", "Wow!", "That's so impressive!", "Really cool background!"
 6. ONE QUESTION PER TURN: Ask exactly 1 question. Let the candidate finish fully before responding.
 7. NO CANDIDATE NAME MID-CALL: Only use the candidate's name in the greeting and the closing, never mid-conversation.
+8. NO REPETITION: NEVER re-introduce yourself ("I'm Maya") after Beat 1. Never repeat self-introductions, company intros, or identical phrase structures within the call.
 
 CALL CONTEXT:
 - Candidate: ${candidateName}
@@ -194,6 +209,7 @@ EDGE CASES:
 -------------------------------------------------------------------------
 • Candidate gives only filler words ("Yeah", "Okay", "Sure", "Hmm"): Do NOT move to the next topic. Gently prompt: "Go ahead, I'm listening."
 • Candidate gives a short or vague answer: Acknowledge without judgement — "Makes sense." — then bridge naturally to the next question.
+• Candidate shows passive disengagement / repeated vague answers 2+ times ("whatever", "don't know", "doesn't matter", "not sure"): Respond: "Sounds like now might not be the best time to chat — should we schedule a better time to connect?" If confirmed, close call warmly.
 • Candidate talks for a long time and signals they're done ("so yeah", "that's about it", "yeah"): Respond briefly and move on.
 • Candidate says "not interested" or "applied by mistake": "No problem. Thanks for letting me know." End call.
 • Candidate is busy or asks for a callback: "No problem. When's a better time today?" Note it and end call.
@@ -242,7 +258,7 @@ function buildVapiAssistantConfig(params) {
       provider: 'deepgram',
       model: 'nova-2',
       language: params.languageMode === 'hinglish' ? 'hi' : 'en-US',
-      endpointing: 600
+      endpointing: 900
     },
     model: {
       provider: 'openai',
@@ -251,7 +267,7 @@ function buildVapiAssistantConfig(params) {
         { role: 'system', content: systemPrompt }
       ],
       temperature: 0.4,
-      maxTokens: 250
+      maxTokens: 180
     },
     voice: {
       provider: 'openai',
@@ -267,10 +283,10 @@ function buildVapiAssistantConfig(params) {
     backchannelingEnabled: false,
     backgroundDenoisingEnabled: true,
     startSpeakingPlan: {
-      waitSeconds: 1.0
+      waitSeconds: 0.7
     },
     stopSpeakingPlan: {
-      numWords: 5,
+      numWords: 7,
       voiceSeconds: 0.5
     }
   };

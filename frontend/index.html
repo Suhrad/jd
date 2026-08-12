@@ -394,37 +394,24 @@
                   <input type="text" id="candidateName" placeholder="e.g. Rohan Sharma" autocomplete="off"
                     onkeydown="if(event.key==='Enter') startInterview()" />
                 </div>
+
+                <!-- Resume File Upload Dropzone -->
+                <div class="form-group" style="width:100%; margin-top:12px;">
+                  <label style="font-weight:600; font-size:13px; color:#334155; margin-bottom:4px; display:block;">📄 Candidate Resume File (PDF, DOCX, TXT)</label>
+                  <div id="resumeDropzone" onclick="document.getElementById('resumeFileInput').click()" style="border:1.5px dashed #cbd5e1; border-radius:8px; padding:12px; text-align:center; background:#f8fafc; cursor:pointer; transition:all 0.2s;" ondragover="event.preventDefault(); this.style.borderColor='#2563eb';" ondragleave="this.style.borderColor='#cbd5e1';" ondrop="handleResumeFileDrop(event)">
+                    <span style="font-size:12px; font-weight:600; color:#2563eb;">📎 Upload Resume File or Drag &amp; Drop</span>
+                    <span style="font-size:11px; color:#64748b; display:block; margin-top:2px;">Auto-extracts bio summary for Maya's personalized opener</span>
+                    <input type="file" id="resumeFileInput" accept=".pdf,.docx,.txt" style="display:none;" onchange="handleResumeFileSelect(event)" />
+                  </div>
+                </div>
+
                 <div class="form-group" style="width:100%; margin-top: 12px;">
-                  <label for="candidateBio">📄 Candidate Resume / LinkedIn Bio (Optional for personalized AI opener)</label>
-                  <textarea id="candidateBio" placeholder="Paste candidate work history, past roles, or key achievements..." rows="2" style="font-size:12.5px;"></textarea>
+                  <label for="candidateBio">Or Paste Candidate Resume / LinkedIn Bio</label>
+                  <textarea id="candidateBio" placeholder="Paste candidate work history, past roles, or key achievements..." rows="3" style="font-size:12.5px;"></textarea>
                 </div>
               </div>
 
-              <div class="instructions-grid">
-                <div class="instruction-card">
-                  <div class="step-badge">1</div>
-                  <div class="step-text">
-                    <strong>Architect Script</strong>
-                    <span>Set Tone &amp; AI Questions</span>
-                  </div>
-                </div>
-                <div class="instruction-card">
-                  <div class="step-badge">2</div>
-                  <div class="step-text">
-                    <strong>Call Candidate</strong>
-                    <span>Put phone on Speakerphone</span>
-                  </div>
-                </div>
-                <div class="instruction-card">
-                  <div class="step-badge">3</div>
-                  <div class="step-text">
-                    <strong>Start Maya</strong>
-                    <span>AI conducts custom interview</span>
-                  </div>
-                </div>
-              </div>
-
-              <button class="btn-start" id="startBtn" onclick="startInterview()">
+              <button class="btn-start" id="startBtn" onclick="startInterview()" style="margin-top:16px;">
                 <div class="start-btn-icon">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -1094,6 +1081,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=20260812c"></script>
+  <script type="module" src="app.js?v=20260812d"></script>
 </body>
 </html>
