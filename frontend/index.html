@@ -189,7 +189,7 @@
 
             <div class="form-group col-4">
               <label for="voiceId">🗣 AI Voice Selection</label>
-              <select id="voiceId" class="select-input">
+              <select id="voiceId" class="select-input" onchange="handleVoiceSelectChange(this.value)">
                 <option value="shimmer" selected>Shimmer (Warm &amp; Natural Female)</option>
                 <option value="fable">Fable (Expressive &amp; Engaging Female)</option>
                 <option value="nova">Nova (Polished &amp; Professional Female)</option>
@@ -1064,6 +1064,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=20260814c"></script>
+  <script type="module" src="app.js?v=20260814d"></script>
 </body>
 </html>

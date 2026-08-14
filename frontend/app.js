@@ -2687,11 +2687,22 @@ window.handlePersonaChange = function(personaKey) {
   }
 };
 
+// ── Voice Select Change Handler ───────────────────────────────────────────
+window.handleVoiceSelectChange = function(voiceId) {
+  const label = document.getElementById('greetingPreviewLabel');
+  const voiceSelect = document.getElementById('voiceId');
+  const selectedText = voiceSelect?.options[voiceSelect.selectedIndex]?.text || voiceId;
+  if (label) {
+    label.textContent = `Sample greeting synced to ${selectedText}`;
+  }
+};
+
 // ── Audio Greeting Preview Player ──────────────────────────────────────────
 window.previewWelcomeMessage = function() {
   const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
   const companyName   = document.getElementById('companyNameInput')?.value?.trim() || 'Weekday';
   const roleTitle     = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
+  const voiceId       = document.getElementById('voiceId')?.value || 'shimmer';
   
   const text = `Hi, I'm ${recruiterName} from ${companyName}! I'll be guiding your voice screening call today for the ${roleTitle} position. Let's get started whenever you're ready!`;
 
@@ -2701,8 +2712,50 @@ window.previewWelcomeMessage = function() {
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
     
+    // Voice Config Matrix for pitch, rate & gender selection
+    const isMale = ['onyx', 'echo'].includes(voiceId);
+    const isNeutral = ['alloy'].includes(voiceId);
+
+    if (voiceId === 'onyx') {
+      utterance.pitch = 0.72; // Deep Male
+      utterance.rate = 0.95;
+    } else if (voiceId === 'echo') {
+      utterance.pitch = 0.82; // Warm Male
+      utterance.rate = 1.0;
+    } else if (voiceId === 'fable') {
+      utterance.pitch = 1.22; // Expressive Female
+      utterance.rate = 1.05;
+    } else if (voiceId === 'nova') {
+      utterance.pitch = 1.10; // Polished Female
+      utterance.rate = 1.0;
+    } else if (voiceId === 'alloy') {
+      utterance.pitch = 0.95; // Neutral Technical
+      utterance.rate = 1.0;
+    } else {
+      // Default Shimmer (Warm Female)
+      utterance.pitch = 1.15;
+      utterance.rate = 1.0;
+    }
+
+    // Match browser synthesized voice by gender preference
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      let matchedVoice = null;
+      if (isMale) {
+        matchedVoice = voices.find(v => {
+          const name = v.name.toLowerCase();
+          return name.includes('david') || name.includes('male') || name.includes('daniel') || name.includes('george') || name.includes('alex');
+        });
+      } else if (!isNeutral) {
+        matchedVoice = voices.find(v => {
+          const name = v.name.toLowerCase();
+          return name.includes('female') || name.includes('samantha') || name.includes('zira') || name.includes('victoria') || name.includes('karen');
+        });
+      }
+      if (matchedVoice) utterance.voice = matchedVoice;
+    }
+
     utterance.onend = () => {
       if (btn) btn.innerHTML = '▶ Preview Welcome Message';
     };
@@ -2711,7 +2764,11 @@ window.previewWelcomeMessage = function() {
     };
 
     window.speechSynthesis.speak(utterance);
-    showToast(`🔊 Playing sample audio greeting for ${recruiterName}...`, 'info');
+    
+    // Get display label of selected voice
+    const voiceSelect = document.getElementById('voiceId');
+    const selectedText = voiceSelect?.options[voiceSelect.selectedIndex]?.text || voiceId;
+    showToast(`🔊 Playing greeting preview for ${recruiterName} (${selectedText})...`, 'info');
   } else {
     showToast(`Sample Greeting: "${text}"`, 'info');
     if (btn) btn.innerHTML = '▶ Preview Welcome Message';
