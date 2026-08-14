@@ -2679,19 +2679,19 @@ window.handlePersonaChange = function(personaKey) {
 
   if (personaKey === 'david') {
     voiceSelect.innerHTML = `
-      <option value="onyx" selected>David — OpenAI Onyx (Deep Male)</option>
-      <option value="echo">David — OpenAI Echo (Authoritative Male)</option>
+      <option value="onyx" selected>Onyx (Deep &amp; Authoritative Male)</option>
+      <option value="echo">Echo (Warm &amp; Professional Male)</option>
     `;
   } else if (personaKey === 'alex') {
     voiceSelect.innerHTML = `
-      <option value="alloy" selected>Alex — OpenAI Alloy (Neutral Professional)</option>
+      <option value="alloy" selected>Alloy (Neutral &amp; Crisp Technical)</option>
     `;
   } else {
     // Default Maya (Female)
     voiceSelect.innerHTML = `
-      <option value="shimmer" selected>Maya — OpenAI Shimmer (Warm Female)</option>
-      <option value="fable">Rachel — OpenAI Fable (Expressive Female)</option>
-      <option value="nova">Nova — OpenAI Nova (Professional Female)</option>
+      <option value="shimmer" selected>Shimmer (Warm &amp; Natural Female)</option>
+      <option value="fable">Fable (Expressive &amp; Engaging Female)</option>
+      <option value="nova">Nova (Polished &amp; Professional Female)</option>
     `;
   }
 };
