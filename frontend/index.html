@@ -184,7 +184,7 @@
           <div class="config-form-grid" style="margin-bottom:16px;">
             <div class="form-group col-4">
               <label for="recruiterName">👤 AI Recruiter Name</label>
-              <input type="text" id="recruiterName" placeholder="e.g. Maya, David, Alex" value="Maya" autocomplete="off" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
+              <input type="text" id="recruiterName" placeholder="e.g. Maya, David, Alex" value="Maya" autocomplete="off" oninput="handleRecruiterNameInput(this.value)" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
             </div>
 
             <div class="form-group col-4">
@@ -403,7 +403,7 @@
                     <line x1="8" y1="23" x2="16" y2="23"/>
                   </svg>
                 </div>
-                <span>Start Screening with Maya</span>
+                <span id="startBtnText">Start Screening with Maya</span>
               </button>
 
             </div>
@@ -1064,6 +1064,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=20260814d"></script>
+  <script type="module" src="app.js?v=20260814e"></script>
 </body>
 </html>

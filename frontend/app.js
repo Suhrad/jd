@@ -295,7 +295,9 @@ function populateFormFromJob(job) {
   if (job.language_mode) document.getElementById('languageMode').value = job.language_mode;
   if (job.voice_id) document.getElementById('voiceId').value = job.voice_id;
   if (document.getElementById('recruiterName')) {
-    document.getElementById('recruiterName').value = job.recruiter_name || 'Maya';
+    const rName = job.recruiter_name || 'Maya';
+    document.getElementById('recruiterName').value = rName;
+    if (typeof handleRecruiterNameInput === 'function') handleRecruiterNameInput(rName);
   }
 
   if (job.jd_text) document.getElementById('jdText').value = job.jd_text;
@@ -1470,11 +1472,12 @@ function renderQuestionsArchitect() {
 function updateRunningSummaryStats(activeQCount) {
   const countEl = document.getElementById('summaryActiveQuestionsCount');
   const durEl   = document.getElementById('summarySyncedDuration');
+  const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
 
   const estMins = Math.max(3, Math.round((activeQCount || 1) * 1.5));
 
   if (countEl) countEl.textContent = `${activeQCount} Active Questions`;
-  if (durEl)   durEl.textContent   = `~${estMins} Mins (Synced to Maya)`;
+  if (durEl)   durEl.textContent   = `~${estMins} Mins (Synced to ${recruiterName})`;
 }
 
 window.refineQuestionInline = async function(tIdx, qIdx) {
@@ -1646,18 +1649,33 @@ window.saveJob = async function (options = {}) {
   }
 };
 
+// ── Recruiter Name Dynamic Handler ─────────────────────────────────────────
+window.handleRecruiterNameInput = function(val) {
+  const name = (val || '').trim() || 'Maya';
+  const startBtnSpan = document.getElementById('startBtnText');
+  if (startBtnSpan) startBtnSpan.textContent = `Start Screening with ${name}`;
+
+  // Recalculate stats live to sync name in summary panel
+  let total = 0;
+  if (Array.isArray(currentQuestionsState)) {
+    currentQuestionsState.forEach(t => { if (t.enabled !== false) total += (t.questions || []).length; });
+  }
+  updateRunningSummaryStats(total);
+};
+
 // ── Start Interview ────────────────────────────────────────────────────────
 window.startInterview = async function () {
   const candidateName = document.getElementById('candidateName').value.trim();
   const candidateBio  = document.getElementById('candidateBio')?.value?.trim() || '';
+  const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
 
   if (!candidateName) { showToast("Please enter candidate's full name.", 'error'); return; }
   if (!currentJobId)  { showToast('Please save Screening Config first.', 'error'); return; }
-  if (!vapi)          { showToast('Maya AI not initialized. Check Vapi key in .env.', 'error'); return; }
+  if (!vapi)          { showToast('AI Recruiter engine not initialized. Check Vapi key in .env.', 'error'); return; }
 
   const btn = document.getElementById('startBtn');
   btn.disabled = true;
-  btn.textContent = 'Connecting to Maya...';
+  btn.textContent = `Connecting to ${recruiterName}...`;
 
   try {
     const res = await fetch('/api/candidates', {
@@ -1673,10 +1691,10 @@ window.startInterview = async function () {
     const jobTitle = document.getElementById('jobTitle').value.trim();
     document.getElementById('callerInitial').textContent     = candidateName[0].toUpperCase();
     document.getElementById('callerNameDisplay').textContent = candidateName;
-    document.getElementById('callerRoleDisplay').textContent = `Maya screening for ${jobTitle || 'Role'}`;
+    document.getElementById('callerRoleDisplay').textContent = `${recruiterName} screening for ${jobTitle || 'Role'}`;
 
     showState('active');
-    setLabel('aiStatusLabel', 'Connecting to Maya...');
+    setLabel('aiStatusLabel', `Connecting to ${recruiterName}...`);
     setBadge('Calling', 'calling');
 
     const call = await vapi.start(data.vapiConfig);
@@ -1697,7 +1715,7 @@ window.startInterview = async function () {
     setBadge('Idle', '');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<div class="start-btn-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div><span>Start Screening with Maya</span>`;
+    btn.innerHTML = `<div class="start-btn-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div><span id="startBtnText">Start Screening with ${recruiterName}</span>`;
   }
 };
 
