@@ -1481,13 +1481,11 @@ function renderQuestionsArchitect() {
 function updateRunningSummaryStats(activeQCount) {
   const countEl = document.getElementById('summaryActiveQuestionsCount');
   const durEl   = document.getElementById('summarySyncedDuration');
-  const credEl  = document.getElementById('summaryCreditCost');
 
   const estMins = Math.max(3, Math.round((activeQCount || 1) * 1.5));
 
   if (countEl) countEl.textContent = `${activeQCount} Active Questions`;
   if (durEl)   durEl.textContent   = `~${estMins} Mins (Synced to Maya)`;
-  if (credEl)  credEl.textContent  = `1 Credit per Call`;
 }
 
 window.refineQuestionInline = async function(tIdx, qIdx) {
