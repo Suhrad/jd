@@ -100,8 +100,8 @@ async function initDb() {
         ['max_notice_days',"TEXT DEFAULT '30'"],['tech_stack',"TEXT DEFAULT ''"],
         ['target_cpa',"TEXT DEFAULT ''"],['tone',"TEXT DEFAULT 'warm'"],
         ['language_mode',"TEXT DEFAULT 'en-IN'"],['duration_target','INTEGER DEFAULT 5'],
-        ['voice_id',"TEXT DEFAULT 'shimmer'"],['custom_questions',"TEXT DEFAULT '[]'"],
-        ['requirements',"TEXT DEFAULT ''"]
+        ['voice_id',"TEXT DEFAULT 'shimmer'"],['recruiter_name',"TEXT DEFAULT 'Maya'"],
+        ['custom_questions',"TEXT DEFAULT '[]'"],['requirements',"TEXT DEFAULT ''"]
       ];
       for (const [col, def] of pgJobCols) {
         try { await pgPool.query('ALTER TABLE jobs ADD COLUMN IF NOT EXISTS ' + col + ' ' + def); } catch (_) {}

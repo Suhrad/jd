@@ -293,20 +293,9 @@ function populateFormFromJob(job) {
   if (job.target_cpa) document.getElementById('targetCpa').value = job.target_cpa;
   if (job.tone) setTone(job.tone);
   if (job.language_mode) document.getElementById('languageMode').value = job.language_mode;
-
-  // Sync AI Persona dropdown based on saved voiceId
-  if (job.voice_id) {
-    const personaSelect = document.getElementById('aiPersonaSelect');
-    const maleVoices = ['onyx', 'echo'];
-    const neutralVoices = ['alloy'];
-    let derivedPersona = 'maya';
-    if (maleVoices.includes(job.voice_id)) derivedPersona = 'david';
-    else if (neutralVoices.includes(job.voice_id)) derivedPersona = 'alex';
-    if (personaSelect) personaSelect.value = derivedPersona;
-    // Update voice options for the derived persona, then set the saved voice
-    if (typeof handlePersonaChange === 'function') handlePersonaChange(derivedPersona);
-    const voiceEl = document.getElementById('voiceId');
-    if (voiceEl) voiceEl.value = job.voice_id;
+  if (job.voice_id) document.getElementById('voiceId').value = job.voice_id;
+  if (document.getElementById('recruiterName')) {
+    document.getElementById('recruiterName').value = job.recruiter_name || 'Maya';
   }
 
   if (job.jd_text) document.getElementById('jdText').value = job.jd_text;
@@ -1593,6 +1582,7 @@ window.saveJob = async function (options = {}) {
   const targetCpa     = document.getElementById('targetCpa')?.value?.trim() || '';
   const languageMode  = document.getElementById('languageMode')?.value || 'en-IN';
   const voiceId       = document.getElementById('voiceId')?.value || 'shimmer';
+  const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
   let jdText          = document.getElementById('jdText')?.value?.trim() || '';
 
   if (!title) {
@@ -1627,6 +1617,7 @@ window.saveJob = async function (options = {}) {
         tone: currentTone,
         languageMode,
         voiceId,
+        recruiterName,
         customQuestions: currentQuestionsState,
         jdText
       })
@@ -2698,14 +2689,11 @@ window.handlePersonaChange = function(personaKey) {
 
 // ── Audio Greeting Preview Player ──────────────────────────────────────────
 window.previewWelcomeMessage = function() {
-  const personaKey = document.getElementById('aiPersonaSelect')?.value || 'maya';
-  const companyName= document.getElementById('companyNameInput')?.value?.trim() || 'Weekday';
-  const roleTitle  = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
+  const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
+  const companyName   = document.getElementById('companyNameInput')?.value?.trim() || 'Weekday';
+  const roleTitle     = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
   
-  const personaNames = { maya: 'Maya', david: 'David', alex: 'Alex' };
-  const pName = personaNames[personaKey] || 'Maya';
-
-  const text = `Hi, I'm ${pName} from ${companyName}! I'll be guiding your voice screening call today for the ${roleTitle} position. Let's get started whenever you're ready!`;
+  const text = `Hi, I'm ${recruiterName} from ${companyName}! I'll be guiding your voice screening call today for the ${roleTitle} position. Let's get started whenever you're ready!`;
 
   const btn = document.getElementById('btnPreviewGreeting');
   if (btn) btn.innerHTML = '🔊 Playing Greeting...';
@@ -2714,17 +2702,7 @@ window.previewWelcomeMessage = function() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
-    utterance.pitch = (personaKey === 'david') ? 0.85 : (personaKey === 'maya' ? 1.1 : 1.0);
     
-    const voices = window.speechSynthesis.getVoices();
-    let selectedVoice = null;
-    if (personaKey === 'maya') {
-      selectedVoice = voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('samantha'));
-    } else if (personaKey === 'david') {
-      selectedVoice = voices.find(v => v.name.toLowerCase().includes('male') || v.name.toLowerCase().includes('david') || v.name.toLowerCase().includes('alex'));
-    }
-    if (selectedVoice) utterance.voice = selectedVoice;
-
     utterance.onend = () => {
       if (btn) btn.innerHTML = '▶ Preview Welcome Message';
     };
@@ -2733,7 +2711,7 @@ window.previewWelcomeMessage = function() {
     };
 
     window.speechSynthesis.speak(utterance);
-    showToast(`🔊 Playing sample audio greeting for ${pName}...`, 'info');
+    showToast(`🔊 Playing sample audio greeting for ${recruiterName}...`, 'info');
   } else {
     showToast(`Sample Greeting: "${text}"`, 'info');
     if (btn) btn.innerHTML = '▶ Preview Welcome Message';

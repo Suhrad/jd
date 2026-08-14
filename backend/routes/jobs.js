@@ -244,13 +244,18 @@ router.post('/', authenticateToken, async (req, res) => {
       [cId, title.trim(), user.id]
     );
 
+    const {
+      companyId, companyName, title, location, maxNoticeDays, techStack, targetCpa,
+      tone, languageMode, durationTarget, voiceId, recruiterName, customQuestions, jdText, requirements
+    } = req.body;
+
     let jobId;
     if (existing) {
       await db.run(`
         UPDATE jobs SET
           company_name = ?, location = ?, max_notice_days = ?, tech_stack = ?,
           target_cpa = ?, tone = ?, language_mode = ?, duration_target = ?,
-          voice_id = ?, custom_questions = ?, jd_text = ?, requirements = ?,
+          voice_id = ?, recruiter_name = ?, custom_questions = ?, jd_text = ?, requirements = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `, [
@@ -263,6 +268,7 @@ router.post('/', authenticateToken, async (req, res) => {
         (languageMode || 'en-IN').trim(),
         parseInt(durationTarget) || 5,
         (voiceId || 'shimmer').trim(),
+        (recruiterName || 'Maya').trim(),
         questionsJson,
         cleanJd,
         (requirements || '').trim(),
@@ -273,8 +279,8 @@ router.post('/', authenticateToken, async (req, res) => {
       const { lastInsertRowid } = await db.run(`
         INSERT INTO jobs (
           company_id, created_by_user_id, title, company_name, location, max_notice_days, tech_stack, target_cpa,
-          tone, language_mode, duration_target, voice_id, custom_questions, jd_text, requirements
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          tone, language_mode, duration_target, voice_id, recruiter_name, custom_questions, jd_text, requirements
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         cId,
         user.id,
@@ -288,6 +294,7 @@ router.post('/', authenticateToken, async (req, res) => {
         (languageMode || 'en-IN').trim(),
         parseInt(durationTarget) || 5,
         (voiceId || 'shimmer').trim(),
+        (recruiterName || 'Maya').trim(),
         questionsJson,
         cleanJd,
         (requirements || '').trim()

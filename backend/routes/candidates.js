@@ -262,6 +262,7 @@ router.post('/', authenticateToken, async (req, res) => {
       bioSummary:      extractedBio.bio_summary,
       jdMatch:         extractedBio.jd_match,
       voiceId:         job.voice_id || 'shimmer',
+      recruiterName:   job.recruiter_name || 'Maya',
       customQuestions: customQuestions,
       jdText:          job.jd_text,
       requirements:    job.requirements

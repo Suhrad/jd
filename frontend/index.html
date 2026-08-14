@@ -183,20 +183,19 @@
 
           <div class="config-form-grid" style="margin-bottom:16px;">
             <div class="form-group col-4">
-              <label for="aiPersonaSelect">👤 AI Recruiter Persona</label>
-              <select id="aiPersonaSelect" class="select-input" onchange="handlePersonaChange(this.value)">
-                <option value="maya" selected>Maya ♀️ (Warm &amp; Engaging Female)</option>
-                <option value="david">David ♂️ (Deep &amp; Professional Male)</option>
-                <option value="alex">Alex ⚧ (Neutral Technical Recruiter)</option>
-              </select>
+              <label for="recruiterName">👤 AI Recruiter Name</label>
+              <input type="text" id="recruiterName" placeholder="e.g. Maya, David, Alex" value="Maya" autocomplete="off" style="width:100%; padding:10px 14px; border:1px solid #cbd5e1; border-radius:8px; font-size:13.5px;" />
             </div>
 
             <div class="form-group col-4">
-              <label for="voiceId">🗣 Voice Style</label>
+              <label for="voiceId">🗣 AI Voice Selection</label>
               <select id="voiceId" class="select-input">
                 <option value="shimmer" selected>Shimmer (Warm &amp; Natural Female)</option>
                 <option value="fable">Fable (Expressive &amp; Engaging Female)</option>
                 <option value="nova">Nova (Polished &amp; Professional Female)</option>
+                <option value="onyx">Onyx (Deep &amp; Authoritative Male)</option>
+                <option value="echo">Echo (Warm &amp; Professional Male)</option>
+                <option value="alloy">Alloy (Neutral &amp; Crisp Technical)</option>
               </select>
             </div>
 
@@ -1065,6 +1064,6 @@
     </div>
   </div>
 
-  <script type="module" src="app.js?v=20260814b"></script>
+  <script type="module" src="app.js?v=20260814c"></script>
 </body>
 </html>

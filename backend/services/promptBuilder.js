@@ -60,7 +60,9 @@ function buildStructuredOpener({
   const estMinsNum = Math.max(3, Math.round(activeCount * 1.5));
   const estMins = `${estMinsNum}-minute`;
 
-  return `Hi ${candidateName}! This is Maya calling from ${companyName} regarding the ${jobTitle} position. I'm reaching out for a quick ${estMins} chat where we'll cover ${agendaTopicsText}. Do you have a few minutes to talk right now?`;
+  const rName = (params.recruiterName || params.recruiter_name || 'Maya').trim();
+
+  return `Hi ${candidateName}! This is ${rName} calling from ${companyName} regarding the ${jobTitle} position. I'm reaching out for a quick ${estMins} chat where we'll cover ${agendaTopicsText}. Do you have a few minutes to talk right now?`;
 }
 
 function buildSystemPrompt(params) {
@@ -80,8 +82,11 @@ function buildSystemPrompt(params) {
     customQuestions = [],
     jdText        = '',
     requirements  = '',
-    voiceId       = 'shimmer'
+    voiceId       = 'shimmer',
+    recruiterName = 'Maya'
   } = params;
+
+  const rName = (recruiterName || params.recruiter_name || 'Maya').trim();
 
   const toneInstruction = TONE_INSTRUCTIONS[tone] || TONE_INSTRUCTIONS.warm;
   const langInstruction = LANGUAGE_DIRECTIVES[languageMode] || LANGUAGE_DIRECTIVES['en-IN'];
@@ -100,7 +105,7 @@ function buildSystemPrompt(params) {
   // Always active: Beat 1 (Greeting) & Beat 2 (Story & Switch Motivation)
   activeBeats.push(`BEAT 1 — GREETING & AGENDA INTRO:
 "${structuredOpener}"
-- If candidate asks "Who is this?" or "What's the role about?": Respond briefly: "I'm Maya from ${companyName}. We're hiring for ${jobTitle} — it's a hands-on role. I just had a couple of quick questions for you."`);
+- If candidate asks "Who is this?" or "What's the role about?": Respond briefly: "I'm ${rName} from ${companyName}. We're hiring for ${jobTitle} — it's a hands-on role. I just had a couple of quick questions for you."`);
 
   // Beat 2: Build a natural, informed opener using LLM-extracted bio summary & JD match
   let beat2Opener;
@@ -163,7 +168,7 @@ Prompt: "Perfect! Do you have any quick questions for me about the team, role, o
 
   const formattedBeats = activeBeats.map((beat, idx) => `STEP ${idx + 1}:\n${beat}`).join('\n\n');
 
-  return `YOU ARE: "Maya", a senior human recruiter calling on behalf of ${companyName}.
+  return `YOU ARE: "${rName}", a senior human recruiter calling on behalf of ${companyName}.
 
 ${toneInstruction}
 ${langInstruction}
