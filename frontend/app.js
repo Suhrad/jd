@@ -110,16 +110,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       loadCompanies().catch(e => console.error('loadCompanies error:', e));
       loadCandidates().catch(e => console.error('loadCandidates error:', e));
+      loadPersonaLibrary().catch(e => console.error('loadPersonaLibrary error:', e));
       initVapi().catch(e => console.error('initVapi error:', e));
       setupJdAutoExtractor();
     }
   }
 
-  // Close company dropdown when clicking outside
+  // Close combobox dropdowns when clicking outside
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.combobox-wrapper')) {
-      const dropdown = document.getElementById('companyDropdown');
-      if (dropdown) dropdown.style.display = 'none';
+      const compDropdown = document.getElementById('companyDropdown');
+      if (compDropdown) compDropdown.style.display = 'none';
+      const roleDropdown = document.getElementById('roleDropdown');
+      if (roleDropdown) roleDropdown.style.display = 'none';
     }
   });
 });
@@ -132,10 +135,7 @@ async function loadCompanies() {
     if (data.companies) {
       allCompaniesCache = data.companies;
       renderCompanyDropdown(allCompaniesCache);
-
-      if (allCompaniesCache.length > 0) {
-        selectCompany(allCompaniesCache[0].id, allCompaniesCache[0].name, allCompaniesCache[0].elevator_pitch);
-      }
+      // Clean slate on start: Leave company and role blank so user can type freely
     }
   } catch (err) {
     console.error('Failed to load companies:', err);
@@ -162,7 +162,7 @@ function renderCompanyDropdown(companies) {
   const dropdown = document.getElementById('companyDropdown');
   if (!dropdown) return;
   if (companies.length === 0) {
-    dropdown.innerHTML = '<div style="padding:10px 14px; font-size:13px; color:#94a3b8;">No companies found</div>';
+    dropdown.innerHTML = '<div style="padding:10px 14px; font-size:13px; color:#94a3b8;">No saved companies match (type to add new)</div>';
     return;
   }
 
@@ -193,95 +193,99 @@ window.selectCompany = async function(id, name, pitch) {
     pitchPill.style.display = 'none';
   }
 
+  // Reset the parsed JD cache when company changes manually
+  if (!skipSavedJobPopulate) {
+    lastAutoParsedJdText = '';
+  }
+
   await loadRolesForCompany(id);
 };
 
 let currentCompanyRolesCache = [];
 
 async function loadRolesForCompany(companyId) {
-  const roleSelect = document.getElementById('roleTitleSelect');
-  if (!roleSelect) return;
-
   try {
     const res = await fetch(`/api/companies/${companyId}/roles`, { headers: getAuthHeaders() });
     const data = await res.json();
     currentCompanyRolesCache = data.roles || [];
-
-    let optionsHtml = '<option value="">-- Select Target Role Title --</option>';
-
-    if (data.roles && data.roles.length > 0) {
-      optionsHtml += data.roles.map(r => `
-        <option value="${escapeQuotes(r.title)}">
-          ${r.title} ${r.jd_text ? ' (JD Ready ✓)' : ''}
-        </option>
-      `).join('');
-    }
-
-    optionsHtml += '<option value="__CREATE_NEW__">➕ Create New Custom Role...</option>';
-    roleSelect.innerHTML = optionsHtml;
-
-    if (data.roles && data.roles.length > 0) {
-      roleSelect.value = data.roles[0].title;
-      handleRoleSelect(data.roles[0].title);
-    } else {
-      document.getElementById('jobTitle').value = '';
-    }
   } catch (err) {
     console.error('Failed to load roles for company:', err);
   }
 }
 
-window.handleRoleSelect = async function(roleValue) {
-  if (roleValue === '__CREATE_NEW__') {
-    const customRole = prompt('Enter new target role title (e.g. Lead ML Engineer):');
-    if (customRole && customRole.trim()) {
-      const roleTitle = customRole.trim();
-      const roleSelect = document.getElementById('roleTitleSelect');
-      const opt = document.createElement('option');
-      opt.value = roleTitle;
-      opt.innerText = roleTitle;
-      opt.selected = true;
-      roleSelect.appendChild(opt);
+// ── Target Role Combobox Logic ──────────────────────────────────────────
+window.showRoleDropdown = function() {
+  const dropdown = document.getElementById('roleDropdown');
+  if (!dropdown) return;
+  if (!currentCompanyId && currentCompanyRolesCache.length === 0) {
+    dropdown.innerHTML = '<div style="padding:10px 14px; font-size:12.5px; color:#94a3b8;">Select a company first to see saved roles, or type custom role directly</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+  renderRoleDropdown(currentCompanyRolesCache);
+  dropdown.style.display = 'block';
+};
 
-      // Save role to company in backend
-      await fetch(`/api/companies/${currentCompanyId}/roles`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ roleTitle })
+window.filterRoleDropdown = function(query) {
+  const dropdown = document.getElementById('roleDropdown');
+  if (!dropdown) return;
+  const filtered = currentCompanyRolesCache.filter(r => r.title.toLowerCase().includes((query || '').toLowerCase()));
+  renderRoleDropdown(filtered);
+  dropdown.style.display = 'block';
+};
+
+function renderRoleDropdown(roles) {
+  const dropdown = document.getElementById('roleDropdown');
+  if (!dropdown) return;
+  if (!roles || roles.length === 0) {
+    dropdown.innerHTML = '<div style="padding:10px 14px; font-size:12.5px; color:#94a3b8;">No matching saved roles (press enter to use custom title)</div>';
+    return;
+  }
+
+  dropdown.innerHTML = roles.map(r => `
+    <div onclick="selectRole('${escapeQuotes(r.title)}')" style="padding:10px 14px; font-size:13px; color:#09090b; cursor:pointer; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; justify-content:space-between;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+      <strong style="color:#09090b; font-weight:600;">${r.title}</strong>
+      ${r.jd_text ? '<span style="font-size:10.5px; color:#047857; background:#ecfdf5; border:1px solid #a7f3d0; padding:2px 6px; border-radius:4px; font-weight:600;">JD Ready ✓</span>' : ''}
+    </div>
+  `).join('');
+}
+
+window.selectRole = async function(roleTitle) {
+  const jobTitleInput = document.getElementById('jobTitle');
+  const dropdown = document.getElementById('roleDropdown');
+  if (jobTitleInput) jobTitleInput.value = roleTitle;
+  if (dropdown) dropdown.style.display = 'none';
+
+  // 1. Immediately populate from in-memory role cache if available
+  const cleanTitle = (roleTitle || '').trim().toLowerCase();
+  const cachedRole = currentCompanyRolesCache.find(r => (r.title || '').trim().toLowerCase() === cleanTitle);
+  if (cachedRole) {
+    if (cachedRole.location) document.getElementById('location').value = cachedRole.location;
+    if (cachedRole.max_notice_days) document.getElementById('maxNoticeDays').value = cachedRole.max_notice_days;
+    if (cachedRole.tech_stack) document.getElementById('techStack').value = cachedRole.tech_stack;
+    if (cachedRole.target_cpa) document.getElementById('targetCpa').value = cachedRole.target_cpa;
+    if (cachedRole.jd_text) {
+      document.getElementById('jdText').value = cachedRole.jd_text;
+      if (typeof handleJdTextBlur === 'function') handleJdTextBlur();
+    }
+  }
+
+  // 2. Fetch full saved job configuration from DB (by-pair)
+  if (currentCompanyId) {
+    try {
+      const res = await fetch(`/api/jobs/by-pair?companyId=${currentCompanyId}&roleTitle=${encodeURIComponent(roleTitle)}`, {
+        headers: getAuthHeaders()
       });
-
-      document.getElementById('jobTitle').value = roleTitle;
-    } else {
-      return;
+      const job = await res.json();
+      if (job && (job.id || job.jd_text)) {
+        populateFormFromJob(job);
+        showToast(`Loaded JD & configuration for ${roleTitle}`, 'success');
+      } else if (cachedRole && cachedRole.jd_text) {
+        showToast(`Loaded JD for ${roleTitle}`, 'info');
+      }
+    } catch (err) {
+      console.warn('Failed to load saved config for role:', err);
     }
-  } else {
-    document.getElementById('jobTitle').value = roleValue;
-  }
-
-  const roleTitle = document.getElementById('jobTitle').value;
-  if (!roleTitle) return;
-
-  // Auto-fill form parameters & JD text from saved role config
-  const matchedRole = currentCompanyRolesCache.find(r => r.title.toLowerCase() === roleTitle.toLowerCase());
-  if (matchedRole && matchedRole.jd_text) {
-    const jdBox = document.getElementById('jdText');
-    if (jdBox) jdBox.value = matchedRole.jd_text;
-    const locBox = document.getElementById('jobLocation');
-    if (locBox && matchedRole.location) locBox.value = matchedRole.location;
-    const noticeBox = document.getElementById('maxNoticeDays');
-    if (noticeBox && matchedRole.max_notice_days) noticeBox.value = matchedRole.max_notice_days;
-  }
-  try {
-    const res = await fetch(`/api/jobs/by-pair?companyId=${currentCompanyId}&roleTitle=${encodeURIComponent(roleTitle)}`, {
-      headers: getAuthHeaders()
-    });
-    const job = await res.json();
-    if (job) {
-      populateFormFromJob(job);
-      showToast(`Loaded saved config for ${roleTitle} @ ${document.getElementById('companyNameInput').value}`, 'success');
-    }
-  } catch (err) {
-    console.error('Failed to auto-fill for pair:', err);
   }
 };
 
@@ -627,6 +631,7 @@ const ROUTE_MAP = {
   '#/admin/portfolios':   { type: 'admin',    subTab: 1 },
   '#/admin/catalog':      { type: 'admin',    subTab: 2 },
   '#/admin/analytics':    { type: 'admin',    subTab: 3 },
+  '#/admin/additions':    { type: 'admin',    subTab: 4 },
 };
 
 window.navigate = function(hash) {
@@ -699,7 +704,7 @@ function handleRoute() {
     if (adminNav)     adminNav.style.display     = 'flex';
 
     const subTabNum = routeConfig.subTab || 1;
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 4; i++) {
       const btn  = document.getElementById(`adminSubTabBtn${i}`);
       const view = document.getElementById(`adminSubView${i}`);
       if (btn)  btn.classList.toggle('active', i === subTabNum);
@@ -709,6 +714,10 @@ function handleRoute() {
     if (subTabNum === 1) loadAdminUserList();
     else if (subTabNum === 2) loadAdminCompanyCatalog();
     else if (subTabNum === 3) loadAdminAnalytics();
+    else if (subTabNum === 4) loadAdminNotifications();
+
+    // Check notification badge count in background
+    loadAdminNotifications();
 
   } else {
     // ACCOUNT MANAGER USER
@@ -861,7 +870,7 @@ async function loadDeepLinkedJobQuestions(jobId, companyId, roleTitle) {
 window.addEventListener('hashchange', handleRoute);
 
 window.switchAdminSubTab = function(subTabNum) {
-  const map = { 1: '#/admin/portfolios', 2: '#/admin/catalog', 3: '#/admin/analytics' };
+  const map = { 1: '#/admin/portfolios', 2: '#/admin/catalog', 3: '#/admin/analytics', 4: '#/admin/additions' };
   if (map[subTabNum]) navigate(map[subTabNum]);
 };
 
@@ -1678,10 +1687,19 @@ window.startInterview = async function () {
   btn.textContent = `Connecting to ${recruiterName}...`;
 
   try {
+    const currentVoiceId = document.getElementById('voiceId')?.value || 'rachel';
     const res = await fetch('/api/candidates', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ name: candidateName, jobId: currentJobId, candidateBio })
+      body: JSON.stringify({ 
+        name: candidateName, 
+        jobId: currentJobId, 
+        candidateBio,
+        recruiterName,
+        voiceId: currentVoiceId,
+        clonedPersonaInstructions: activeClonedPersona?.system_instructions || '',
+        clonedPersonaDna: activeClonedPersona?.style_dna || null
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -2610,6 +2628,7 @@ function injectSvgGradients() {
 
 let jdParseTimeout = null;
 let lastAutoParsedJdText = '';
+let skipSavedJobPopulate = false;
 
 function setupJdAutoExtractor() {
   const jdTextEl = document.getElementById('jdText');
@@ -2628,6 +2647,7 @@ function setupJdAutoExtractor() {
     }
 
     try {
+      skipSavedJobPopulate = true;
       const res = await fetch('/api/jobs/parse-jd', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2636,23 +2656,59 @@ function setupJdAutoExtractor() {
       if (!res.ok) throw new Error('Parsing failed');
       const data = await res.json();
       
-      // Update form values (companyName is driven by combobox, not a free-text field)
-      if (data.title)       document.getElementById('jobTitle').value    = data.title;
-      if (data.location)    document.getElementById('location').value    = data.location;
-      if (data.maxNoticeDays) document.getElementById('maxNoticeDays').value = data.maxNoticeDays;
-      if (data.techStack)   document.getElementById('techStack').value   = data.techStack;
-      if (data.targetCpa)   document.getElementById('targetCpa').value   = data.targetCpa;
+      // Check extracted companyName
+      const extCompName = (data.companyName || '').trim();
+      const compInput = document.getElementById('companyNameInput');
+      const compHidden = document.getElementById('companyIdHidden');
       
-      if (data.tone)        setTone(data.tone);
+      if (extCompName) {
+        if (compInput) compInput.value = extCompName;
+        const matchedComp = allCompaniesCache.find(c => c.name.toLowerCase() === extCompName.toLowerCase());
+        if (matchedComp) {
+          currentCompanyId = matchedComp.id;
+          if (compHidden) compHidden.value = matchedComp.id;
+          await loadRolesForCompany(matchedComp.id);
+        } else {
+          currentCompanyId = null;
+          if (compHidden) compHidden.value = '';
+        }
+      } else {
+        // If not detected by AI, leave blank so user can type freely
+        if (compInput) compInput.value = '';
+        if (compHidden) compHidden.value = '';
+        currentCompanyId = null;
+      }
+
+      // Role title free-text input
+      const jobTitleInput = document.getElementById('jobTitle');
+      if (jobTitleInput) {
+        jobTitleInput.value = (data.title && data.title.trim()) ? data.title.trim() : '';
+      }
+
+      // Form parameter inputs
+      document.getElementById('location').value      = data.location      || '';
+      document.getElementById('maxNoticeDays').value = data.maxNoticeDays || '';
+      document.getElementById('techStack').value     = data.techStack     || '';
+      document.getElementById('targetCpa').value     = data.targetCpa     || '';
+      if (data.tone) setTone(data.tone);
+      if (data.voiceId) {
+        const vSelect = document.getElementById('voiceId');
+        if (vSelect) vSelect.value = data.voiceId;
+      }
+
+      // Auto-architect 7 screening category questions for the new JD
+      if (typeof window.generateScriptWithAI === 'function') {
+        window.generateScriptWithAI();
+      }
 
       if (statusEl) {
         statusEl.className = 'jd-parse-status success';
-        statusEl.innerHTML = '✓ Role parameters and recruiter persona successfully extracted!';
+        statusEl.innerHTML = '✓ Role parameters & 7 screening questions extracted!';
         setTimeout(() => {
           if (statusEl.className === 'jd-parse-status success') statusEl.innerHTML = '';
         }, 5000);
       }
-      showToast('✨ AI auto-populated role parameters and recruiter persona!', 'success');
+      showToast('✨ AI auto-populated role parameters & 7 screening questions!', 'success');
     } catch (err) {
       console.warn('[JdAutoExtractor] failed:', err.message);
       if (statusEl) {
@@ -2662,6 +2718,8 @@ function setupJdAutoExtractor() {
           if (statusEl.className === 'jd-parse-status error') statusEl.innerHTML = '';
         }, 5000);
       }
+    } finally {
+      setTimeout(() => { skipSavedJobPopulate = false; }, 500);
     }
   };
 
@@ -2681,116 +2739,399 @@ function setupJdAutoExtractor() {
   });
 }
 
-// ── Persona & Voice-Gender Matching ───────────────────────────────────────
-window.handlePersonaChange = function(personaKey) {
-  const voiceSelect = document.getElementById('voiceId');
-  if (!voiceSelect) return;
+// ── Recruiter Persona Studio & Cloner ─────────────────────────────────────
+let allPersonasCache = [];
+let activeClonedPersona = null;
+let currentExtractedDna = null;
 
-  if (personaKey === 'david') {
-    voiceSelect.innerHTML = `
-      <option value="onyx" selected>Onyx (Deep &amp; Authoritative Male)</option>
-      <option value="echo">Echo (Warm &amp; Professional Male)</option>
+window.loadPersonaLibrary = async function() {
+  const select = document.getElementById('personaPresetSelect');
+  if (!select) return;
+
+  try {
+    const res = await fetch('/api/personas', { headers: getAuthHeaders() });
+    const data = await res.json();
+    if (!data.personas) return;
+
+    allPersonasCache = data.personas;
+
+    // Preserve current selection if valid
+    const currentVal = select.value || 'default_maya';
+
+    select.innerHTML = `
+      <option value="default_maya">Default (Maya — Warm Consultative)</option>
+      ${allPersonasCache.map(p => `<option value="${p.id}">${escapeQuotes(p.persona_name)}</option>`).join('')}
+      <option value="__custom_new__">+ Clone New Recruiter Style...</option>
     `;
-  } else if (personaKey === 'alex') {
-    voiceSelect.innerHTML = `
-      <option value="alloy" selected>Alloy (Neutral &amp; Crisp Technical)</option>
-    `;
+
+    if (allPersonasCache.some(p => String(p.id) === currentVal) || currentVal === 'default_maya') {
+      select.value = currentVal;
+    }
+  } catch (err) {
+    console.warn('loadPersonaLibrary error:', err);
+  }
+};
+
+window.handlePersonaPresetChange = function(val) {
+  if (val === '__custom_new__') {
+    openClonePersonaModal();
+    return;
+  }
+
+  const descEl = document.getElementById('activePersonaDnaDesc');
+  const nameInput = document.getElementById('recruiterName');
+  const voiceSelect = document.getElementById('voiceId');
+
+  if (val === 'default_maya') {
+    activeClonedPersona = null;
+    if (nameInput) nameInput.value = 'Maya';
+    if (voiceSelect) {
+      voiceSelect.value = 'rachel';
+      handleVoiceSelectChange('rachel');
+    }
+    if (descEl) descEl.textContent = 'Using standard warm consultative interview phrasing.';
+    showToast('Applied default Maya recruiter persona.', 'info');
+    return;
+  }
+
+  const persona = allPersonasCache.find(p => String(p.id) === String(val));
+  if (persona) {
+    activeClonedPersona = persona;
+    if (nameInput) nameInput.value = persona.recruiter_name;
+    if (voiceSelect && persona.voice_id) {
+      voiceSelect.value = persona.voice_id;
+      handleVoiceSelectChange(persona.voice_id);
+    }
+    const dna = persona.style_dna || {};
+    const summary = dna.executiveSummary || 'Cloned custom recruiter personality.';
+    if (descEl) descEl.textContent = `${persona.persona_name}: ${summary}`;
+    showToast(`✓ Cloned persona "${persona.persona_name}" activated!`, 'success');
+  }
+};
+
+let activeCloneInputMode = 'description';
+
+window.handleCloneTextareaInput = function(val) {
+  const counter = document.getElementById('cloneCharCounter');
+  if (counter) {
+    const len = (val || '').length;
+    const min = activeCloneInputMode === 'description' ? 20 : 50;
+    counter.textContent = `${len} / ${min} min chars`;
+    counter.style.color = len >= min ? '#059669' : '#94a3b8';
+    counter.style.fontWeight = len >= min ? '700' : '500';
+  }
+};
+
+window.setCloneInputMode = function(mode) {
+  activeCloneInputMode = mode;
+  const btnDesc = document.getElementById('btnCloneModeDesc');
+  const btnTrans = document.getElementById('btnCloneModeTrans');
+  const hint = document.getElementById('cloneModeHint');
+  const label = document.getElementById('cloneInputLabel');
+  const sampleBtn = document.getElementById('btnLoadSampleTranscript');
+  const pills = document.getElementById('cloneInspirationPills');
+  const txt = document.getElementById('cloneTranscriptText');
+
+  if (mode === 'description') {
+    if (btnDesc) btnDesc.classList.add('active');
+    if (btnTrans) btnTrans.classList.remove('active');
+    if (hint) hint.textContent = 'Define conversational tone, probing rules, and pitching style in plain English.';
+    if (label) label.textContent = 'Recruiter Style & Phrasing Prompt';
+    if (sampleBtn) sampleBtn.style.display = 'none';
+    if (pills) pills.style.display = 'block';
+    if (txt && !txt.value) {
+      txt.placeholder = "Describe how you want this recruiter to speak, probe, and pitch... e.g. 'High-energy founder mentality who speaks fast, probes deeply into production outages and system trade-offs, and pitches our high equity upside.'";
+    }
   } else {
-    // Default Maya (Female)
-    voiceSelect.innerHTML = `
-      <option value="shimmer" selected>Shimmer (Warm &amp; Natural Female)</option>
-      <option value="fable">Fable (Expressive &amp; Engaging Female)</option>
-      <option value="nova">Nova (Polished &amp; Professional Female)</option>
-    `;
+    if (btnTrans) btnTrans.classList.add('active');
+    if (btnDesc) btnDesc.classList.remove('active');
+    if (hint) hint.textContent = 'Extracts signature style & conversational pivots from actual past interview dialogue.';
+    if (label) label.textContent = 'Paste Past Screening Transcripts or Excerpts';
+    if (sampleBtn) sampleBtn.style.display = 'inline-block';
+    if (pills) pills.style.display = 'none';
+    if (txt && !txt.value) {
+      txt.placeholder = "Paste actual interview dialogue or candidate screening notes here...\ne.g. 'Recruiter: Hey Aryan! Great to connect. I saw you built the streaming engine at Swiggy. Walk me through the hardest bug you ran into...'";
+    }
+  }
+  handleCloneTextareaInput(txt?.value || '');
+};
+
+window.applyCloneInspiration = function(type) {
+  const txt = document.getElementById('cloneTranscriptText');
+  const nameInput = document.getElementById('cloneRecruiterNameInput');
+  const voiceSelect = document.getElementById('cloneBaseVoiceSelect');
+
+  document.querySelectorAll('.persona-preset-card').forEach(card => card.classList.remove('active'));
+  const activeCard = document.getElementById(`presetCard_${type}`);
+  if (activeCard) activeCard.classList.add('active');
+
+  if (type === 'founder') {
+    if (nameInput && (!nameInput.value || nameInput.value === 'Maya')) nameInput.value = 'Suhrad (Founder)';
+    if (voiceSelect) voiceSelect.value = 'adam';
+    if (txt) txt.value = 'High-energy founder mentality. Speaks fast, punchy, and confident. Uses phrases like "Love that momentum", "Help me understand the architectural trade-offs you made", "If the founders gave you full ownership tomorrow, how would you design this from scratch?". Probes deeply into production outages, scaling limits, and founder ambition. Pitches rapid growth, high equity upside, and zero red tape.';
+  } else if (type === 'tech_griller') {
+    if (nameInput && (!nameInput.value || nameInput.value === 'Maya')) nameInput.value = 'Alex (Tech Lead)';
+    if (voiceSelect) voiceSelect.value = 'alloy';
+    if (txt) txt.value = 'Razor-sharp principal engineer screening style. Direct, concise, zero small talk. Probes into distributed database concurrency, cache invalidation, edge-cases, and trade-offs. Uses phrases like "Walk me through the exact bottlenecks", "Why didn\'t you choose event-driven architecture?", "Quantify that performance gain for me".';
+  } else if (type === 'consultative') {
+    if (nameInput && (!nameInput.value || nameInput.value === 'Maya')) nameInput.value = 'Priya (Talent Partner)';
+    if (voiceSelect) voiceSelect.value = 'neerja';
+    if (txt) txt.value = 'Warm, empathetic talent partner. Creates deep psychological safety so candidates open up. Probes into team collaboration, leadership under pressure, and conflict resolution. Uses phrases like "That makes total sense, thank you for sharing that context", "Let\'s double-click on how you aligned stakeholders", "I really appreciate that transparency". Pitches culture, mentorship, and career acceleration.';
+  } else if (type === 'fast_track') {
+    if (nameInput && (!nameInput.value || nameInput.value === 'Maya')) nameInput.value = 'Neerja (Tech Recruiter)';
+    if (voiceSelect) voiceSelect.value = 'neerja';
+    if (txt) txt.value = 'Crisp, articulate Bangalore tech recruiter with authentic Indian English cadence. Extremely efficient. Quickly verifies core tech stack, hands-on production depth, CTC budget, and notice period buyout flexibility. Uses phrases like "Great to connect with you today", "Could you walk me through your hands-on contribution on that project?", "What is your current notice period and joining flexibility?".';
+  }
+  handleCloneTextareaInput(txt?.value || '');
+  showToast('Preset applied. Feel free to customize the prompt.', 'info');
+};
+
+window.openClonePersonaModal = function() {
+  const modal = document.getElementById('clonePersonaModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    setCloneInputMode('description');
+    // Pre-populate recruiter name if currently filled
+    const currentName = document.getElementById('recruiterName')?.value?.trim();
+    const cloneNameInput = document.getElementById('cloneRecruiterNameInput');
+    if (cloneNameInput && currentName && currentName !== 'Maya') {
+      cloneNameInput.value = currentName;
+    }
   }
 };
 
-// ── Voice Select Change Handler ───────────────────────────────────────────
-window.handleVoiceSelectChange = function(voiceId) {
-  const label = document.getElementById('greetingPreviewLabel');
-  const voiceSelect = document.getElementById('voiceId');
-  const selectedText = voiceSelect?.options[voiceSelect.selectedIndex]?.text || voiceId;
-  if (label) {
-    label.textContent = `Sample greeting synced to ${selectedText}`;
+window.closeClonePersonaModal = function() {
+  const modal = document.getElementById('clonePersonaModal');
+  if (modal) modal.classList.add('hidden');
+  const select = document.getElementById('personaPresetSelect');
+  if (select && select.value === '__custom_new__') {
+    select.value = activeClonedPersona ? activeClonedPersona.id : 'default_maya';
   }
 };
 
-// ── Audio Greeting Preview Player ──────────────────────────────────────────
+window.loadSampleRecruiterTranscript = function() {
+  const sample = `Recruiter (Suhrad): Hey Aryan, thanks for jumping on. I saw you built the core streaming engine over at Swiggy. Love that momentum. Walk me through the hardest production outage you debugged there.
+Candidate: We had a massive socket leak during the IPL matches when 200k concurrent users connected. The memory spiked to 98% in 3 minutes.
+Recruiter (Suhrad): What architectural trade-offs did you make to resolve that without dropping active orders?
+Candidate: We rewrote the connection pool using a non-blocking netpoll reactor and dropped the heartbeat interval from 30s to 5s.
+Recruiter (Suhrad): Fair enough, let's peel back that layer. If the founders handed you full ownership of our real-time voice infrastructure tomorrow, how would you design it from scratch?`;
+
+  const txtEl = document.getElementById('cloneTranscriptText');
+  const nameEl = document.getElementById('cloneRecruiterNameInput');
+  if (txtEl) txtEl.value = sample;
+  if (nameEl && !nameEl.value) nameEl.value = 'Suhrad';
+  showToast('Sample recruiter transcript loaded.', 'info');
+};
+
+window.handleExtractPersonaDNA = async function() {
+  const nameInput = document.getElementById('cloneRecruiterNameInput');
+  const transcriptInput = document.getElementById('cloneTranscriptText');
+  const voiceSelect = document.getElementById('cloneBaseVoiceSelect');
+  const btn = document.getElementById('btnExtractPersonaDna');
+  const saveBtn = document.getElementById('btnSaveClonedPersona');
+  const resultCard = document.getElementById('clonedDnaResultCard');
+
+  const recruiterName = nameInput?.value?.trim() || 'Recruiter';
+  const textInput = transcriptInput?.value?.trim() || '';
+  const roleTitle = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
+  const inputType = activeCloneInputMode || 'description';
+
+  const minChars = inputType === 'description' ? 20 : 50;
+  if (!textInput || textInput.length < minChars) {
+    showToast(`Please enter at least ${minChars} characters describing the recruiter style or interview dialogue.`, 'warning');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = 'Extracting Persona Profile...';
+  }
+
+  try {
+    const res = await fetch('/api/personas/clone', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        recruiterName,
+        styleInput: textInput,
+        roleTitle,
+        inputType
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Extraction failed');
+
+    currentExtractedDna = data.personaDNA;
+
+    // Render result card
+    if (resultCard) {
+      resultCard.style.display = 'block';
+      const nameEl = document.getElementById('dnaCardPersonaName');
+      const summaryEl = document.getElementById('dnaCardSummary');
+      const phrasesContainer = document.getElementById('dnaCardPhrasesChips');
+      const probingEl = document.getElementById('dnaCardProbing');
+      const pitchingEl = document.getElementById('dnaCardPitching');
+
+      if (nameEl) nameEl.textContent = currentExtractedDna.personaName || `${recruiterName} Persona Profile`;
+      if (summaryEl) summaryEl.textContent = currentExtractedDna.executiveSummary || 'Trained signature recruiter profile.';
+      if (probingEl) probingEl.textContent = currentExtractedDna.probingTechnique || 'Direct technical deep-dive';
+      if (pitchingEl) pitchingEl.textContent = currentExtractedDna.pitchingCharisma || 'Founder vision & fast growth';
+
+      if (phrasesContainer && Array.isArray(currentExtractedDna.signaturePhrases)) {
+        phrasesContainer.innerHTML = currentExtractedDna.signaturePhrases.map(p => `
+          <span style="background:#ffffff; color:#0f172a; font-size:11px; font-weight:600; padding:4px 9px; border-radius:6px; border:1px solid #cbd5e1; box-shadow:0 1px 2px rgba(0,0,0,0.03);">
+            "${escapeQuotes(p)}"
+          </span>
+        `).join('');
+      }
+    }
+
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.style.opacity = '1';
+    }
+
+    showToast('Persona profile successfully extracted.', 'success');
+  } catch (err) {
+    showToast(`Extraction failed: ${err.message}`, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Extract Persona Profile`;
+    }
+  }
+};
+
+let currentPreviewAudio = null;
+let currentPreviewingSelectId = null;
+
+window.toggleVoicePreview = function(selectId) {
+  const selectEl = document.getElementById(selectId);
+  if (!selectEl) return;
+
+  const voiceId = selectEl.value;
+  const btnEl = document.getElementById(selectId === 'voiceId' ? 'btnPlayVoiceId' : 'btnPlayCloneBaseVoiceSelect');
+
+  // If currently playing the same voice, stop it
+  if (currentPreviewingSelectId === selectId && currentPreviewAudio && !currentPreviewAudio.paused) {
+    currentPreviewAudio.pause();
+    currentPreviewAudio.currentTime = 0;
+    currentPreviewAudio = null;
+    resetVoicePreviewBtn(selectId);
+    currentPreviewingSelectId = null;
+    return;
+  }
+
+  // Cancel any existing playback
+  if (currentPreviewAudio) {
+    currentPreviewAudio.pause();
+    currentPreviewAudio.currentTime = 0;
+    currentPreviewAudio = null;
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+  if (currentPreviewingSelectId) {
+    resetVoicePreviewBtn(currentPreviewingSelectId);
+  }
+
+  currentPreviewingSelectId = selectId;
+
+  if (btnEl) {
+    btnEl.classList.add('playing');
+    btnEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Stop`;
+  }
+
+  const defaultText = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play`;
+  playVoiceSynthesis('', voiceId, btnEl, defaultText, '');
+};
+
+function resetVoicePreviewBtn(selectId) {
+  const btnEl = document.getElementById(selectId === 'voiceId' ? 'btnPlayVoiceId' : 'btnPlayCloneBaseVoiceSelect');
+  if (btnEl) {
+    btnEl.classList.remove('playing');
+    btnEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play`;
+  }
+}
+
+// ── Studio-Grade Azure Neural Audio Stream Player (Zero-Lag MP3 Cloud Stream) ─────
+function playVoiceSynthesis(text, voiceId, btnEl, defaultBtnText, recruiterName = '') {
+  if (currentPreviewAudio) {
+    currentPreviewAudio.pause();
+    currentPreviewAudio.currentTime = 0;
+    currentPreviewAudio = null;
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+
+  const cleanup = () => {
+    if (btnEl) {
+      btnEl.classList.remove('playing');
+      if (defaultBtnText) btnEl.innerHTML = defaultBtnText;
+    }
+    if (currentPreviewingSelectId) {
+      resetVoicePreviewBtn(currentPreviewingSelectId);
+      currentPreviewingSelectId = null;
+    }
+    if (currentPreviewAudio) {
+      currentPreviewAudio = null;
+    }
+  };
+
+  try {
+    // Stream real studio-quality Azure Neural MP3 audio directly from backend
+    const url = `/api/voice/preview?voiceId=${encodeURIComponent(voiceId || 'neerja')}${text ? '&text=' + encodeURIComponent(text) : ''}`;
+    const audio = new Audio(url);
+    currentPreviewAudio = audio;
+
+    audio.onended = cleanup;
+    audio.onerror = (err) => {
+      console.warn('[Audio Stream Error]:', err);
+      cleanup();
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        console.warn('Playback interrupted:', err);
+        cleanup();
+      });
+    }
+  } catch (err) {
+    console.error('Audio initialization failed:', err);
+    cleanup();
+  }
+}
+
+window.previewClonedGreetingAudio = function() {
+  if (!currentExtractedDna) return;
+  const recruiterName = document.getElementById('cloneRecruiterNameInput')?.value?.trim() || 'Recruiter';
+  const voiceId = document.getElementById('cloneBaseVoiceSelect')?.value || 'neerja';
+  const text = currentExtractedDna.sampleGreeting || `Hey! ${recruiterName} here. Excited to dive into what you've been building and how you might shape this role!`;
+
+  const btn = document.getElementById('btnPreviewClonedVoice');
+  if (btn) {
+    btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg> Playing...`;
+  }
+  playVoiceSynthesis(text, voiceId, btn, `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play Audio Greeting`, recruiterName);
+};
+
+// ── Audio Greeting Preview Player (Main Screener Header) ─────────────────────
 window.previewWelcomeMessage = function() {
   const recruiterName = document.getElementById('recruiterName')?.value?.trim() || 'Maya';
   const companyName   = document.getElementById('companyNameInput')?.value?.trim() || 'Weekday';
   const roleTitle     = document.getElementById('jobTitle')?.value?.trim() || 'Software Engineer';
-  const voiceId       = document.getElementById('voiceId')?.value || 'shimmer';
-  
-  const text = `Hi, I'm ${recruiterName} from ${companyName}! I'll be guiding your voice screening call today for the ${roleTitle} position. Let's get started whenever you're ready!`;
+  const voiceId       = document.getElementById('voiceId')?.value || 'neerja';
 
-  const btn = document.getElementById('btnPreviewGreeting');
-  if (btn) btn.innerHTML = '🔊 Playing Greeting...';
+  const text = "Hi, I'm " + recruiterName + " from " + companyName + "! I'll be guiding your voice screening call today for the " + roleTitle + " position. Let's get started whenever you're ready!";
+  const btn  = document.getElementById('btnPreviewGreeting');
+  const voiceSelect  = document.getElementById('voiceId');
+  const selectedText = voiceSelect?.options[voiceSelect.selectedIndex]?.text || voiceId;
 
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Voice Config Matrix for pitch, rate & gender selection
-    const isMale = ['onyx', 'echo'].includes(voiceId);
-    const isNeutral = ['alloy'].includes(voiceId);
-
-    if (voiceId === 'onyx') {
-      utterance.pitch = 0.72; // Deep Male
-      utterance.rate = 0.95;
-    } else if (voiceId === 'echo') {
-      utterance.pitch = 0.82; // Warm Male
-      utterance.rate = 1.0;
-    } else if (voiceId === 'fable') {
-      utterance.pitch = 1.22; // Expressive Female
-      utterance.rate = 1.05;
-    } else if (voiceId === 'nova') {
-      utterance.pitch = 1.10; // Polished Female
-      utterance.rate = 1.0;
-    } else if (voiceId === 'alloy') {
-      utterance.pitch = 0.95; // Neutral Technical
-      utterance.rate = 1.0;
-    } else {
-      // Default Shimmer (Warm Female)
-      utterance.pitch = 1.15;
-      utterance.rate = 1.0;
-    }
-
-    // Match browser synthesized voice by gender preference
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      let matchedVoice = null;
-      if (isMale) {
-        matchedVoice = voices.find(v => {
-          const name = v.name.toLowerCase();
-          return name.includes('david') || name.includes('male') || name.includes('daniel') || name.includes('george') || name.includes('alex');
-        });
-      } else if (!isNeutral) {
-        matchedVoice = voices.find(v => {
-          const name = v.name.toLowerCase();
-          return name.includes('female') || name.includes('samantha') || name.includes('zira') || name.includes('victoria') || name.includes('karen');
-        });
-      }
-      if (matchedVoice) utterance.voice = matchedVoice;
-    }
-
-    utterance.onend = () => {
-      if (btn) btn.innerHTML = '▶ Preview Welcome Message';
-    };
-    utterance.onerror = () => {
-      if (btn) btn.innerHTML = '▶ Preview Welcome Message';
-    };
-
-    window.speechSynthesis.speak(utterance);
-    
-    // Get display label of selected voice
-    const voiceSelect = document.getElementById('voiceId');
-    const selectedText = voiceSelect?.options[voiceSelect.selectedIndex]?.text || voiceId;
-    showToast(`🔊 Playing greeting preview for ${recruiterName} (${selectedText})...`, 'info');
-  } else {
-    showToast(`Sample Greeting: "${text}"`, 'info');
-    if (btn) btn.innerHTML = '▶ Preview Welcome Message';
-  }
+  playVoiceSynthesis(text, voiceId, btn, 'Preview Welcome Message', recruiterName);
+  showToast('Playing greeting preview for ' + recruiterName + ' (' + selectedText + ')...', 'info');
 };
 
 // ── JD File Upload & Parsing Handlers ─────────────────────────────────────
@@ -2861,4 +3202,258 @@ function processResumeFile(file) {
   };
   reader.readAsText(file);
 }
+
+// ── Admin Governance & AM Additions Queue ─────────────────────────────────
+let allAdminNotifsCache = [];
+let activeNotifFilter = 'pending'; // 'pending' | 'all'
+let pendingAdminActionData = null; // { notifId, action }
+
+window.setNotifFilter = function(filterMode) {
+  activeNotifFilter = filterMode;
+  const btnPending = document.getElementById('btnNotifFilterPending');
+  const btnAll = document.getElementById('btnNotifFilterAll');
+
+  if (filterMode === 'pending') {
+    if (btnPending) {
+      btnPending.style.background = '#ffffff';
+      btnPending.style.color = '#09090b';
+      btnPending.style.fontWeight = '700';
+      btnPending.style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)';
+    }
+    if (btnAll) {
+      btnAll.style.background = 'transparent';
+      btnAll.style.color = '#64748b';
+      btnAll.style.fontWeight = '600';
+      btnAll.style.boxShadow = 'none';
+    }
+  } else {
+    if (btnAll) {
+      btnAll.style.background = '#ffffff';
+      btnAll.style.color = '#09090b';
+      btnAll.style.fontWeight = '700';
+      btnAll.style.boxShadow = '0 1px 2px rgba(0,0,0,0.06)';
+    }
+    if (btnPending) {
+      btnPending.style.background = 'transparent';
+      btnPending.style.color = '#64748b';
+      btnPending.style.fontWeight = '600';
+      btnPending.style.boxShadow = 'none';
+    }
+  }
+
+  renderAdminNotificationsTable();
+};
+
+window.loadAdminNotifications = async function() {
+  const tbody = document.getElementById('adminNotificationsTableBody');
+  const countBadge = document.getElementById('adminNotifBadgeCount');
+  const pendingPill = document.getElementById('notifPendingCountPill');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/admin/notifications', { headers: getAuthHeaders() });
+    const data = await res.json();
+    allAdminNotifsCache = data.notifications || [];
+
+    const unreviewedCount = allAdminNotifsCache.filter(n => n.review_status === 'unreviewed').length;
+    if (countBadge) {
+      if (unreviewedCount > 0) {
+        countBadge.textContent = unreviewedCount;
+        countBadge.style.display = 'inline-block';
+      } else {
+        countBadge.style.display = 'none';
+      }
+    }
+    if (pendingPill) {
+      pendingPill.textContent = unreviewedCount;
+      pendingPill.style.display = unreviewedCount > 0 ? 'inline-block' : 'none';
+    }
+
+    renderAdminNotificationsTable();
+  } catch (err) {
+    console.error('Failed to load admin notifications:', err);
+  }
+};
+
+function renderAdminNotificationsTable() {
+  const tbody = document.getElementById('adminNotificationsTableBody');
+  if (!tbody) return;
+
+  const displayList = activeNotifFilter === 'pending'
+    ? allAdminNotifsCache.filter(n => n.review_status === 'unreviewed')
+    : allAdminNotifsCache;
+
+  if (displayList.length === 0) {
+    if (activeNotifFilter === 'pending') {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="padding:48px 16px; text-align:center; color:#64748b;">
+            <div style="font-size:32px; margin-bottom:8px;">🎉</div>
+            <div style="font-weight:700; font-size:15px; color:#09090b; margin-bottom:4px;">Inbox Zero — All Clear!</div>
+            <div style="font-size:13px; color:#64748b;">No pending company additions require review.</div>
+          </td>
+        </tr>`;
+    } else {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="padding:32px 16px; text-align:center; color:#64748b; font-size:13px;">
+            No company addition history records found.
+          </td>
+        </tr>`;
+    }
+    return;
+  }
+
+  tbody.innerHTML = displayList.map(n => {
+    const dateStr = new Date(n.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    let statusBadge = '<span style="background:#fef3c7; color:#92400e; padding:3px 8px; border-radius:6px; font-weight:700; font-size:11.5px; border:1px solid #fde68a;">Pending Review</span>';
+    if (n.review_status === 'reviewed') {
+      statusBadge = '<span style="background:#dcfce7; color:#166534; padding:3px 8px; border-radius:6px; font-weight:700; font-size:11.5px; border:1px solid #bbf7d0;">✓ Reviewed</span>';
+    } else if (n.review_status === 'revoked') {
+      statusBadge = '<span style="background:#fee2e2; color:#991b1b; padding:3px 8px; border-radius:6px; font-weight:700; font-size:11.5px; border:1px solid #fecaca;">🚫 Access Revoked</span>';
+    }
+
+    const actionButtons = n.review_status === 'unreviewed' ? `
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" onclick="promptAdminNotificationAction(${n.id}, 'mark_reviewed')" 
+          style="background:#ecfdf5; color:#065f46; border:1.5px solid #a7f3d0; border-radius:8px; font-weight:700; font-size:12px; padding:6px 12px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.15s ease;" 
+          onmouseover="this.style.background='#d1fae5'; this.style.borderColor='#6ee7b7';" 
+          onmouseout="this.style.background='#ecfdf5'; this.style.borderColor='#a7f3d0';">
+          ✓ Mark Reviewed
+        </button>
+        <button type="button" onclick="promptAdminNotificationAction(${n.id}, 'revoke_am')" 
+          style="background:#fff1f2; color:#be123c; border:1.5px solid #fecdd3; border-radius:8px; font-weight:700; font-size:12px; padding:6px 12px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.15s ease;" 
+          onmouseover="this.style.background='#ffe4e6'; this.style.borderColor='#fda4af';" 
+          onmouseout="this.style.background='#fff1f2'; this.style.borderColor='#fecdd3';">
+          🚫 Remove from AM
+        </button>
+      </div>
+    ` : `
+      <span style="color:#64748b; font-size:12px; font-weight:600;">✓ Resolved</span>
+    `;
+
+    return `
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:13px 16px; font-weight:700; color:#09090b;">🏢 ${escapeQuotes(n.company_name)}</td>
+        <td style="padding:13px 16px; color:#334155; font-weight:600;">👤 ${escapeQuotes(n.am_name)}</td>
+        <td style="padding:13px 16px; color:#475569;">🎯 ${escapeQuotes(n.role_title || 'Role')}</td>
+        <td style="padding:13px 16px; color:#64748b; font-size:12px;">${dateStr}</td>
+        <td style="padding:13px 16px;">${statusBadge}</td>
+        <td style="padding:13px 16px;">${actionButtons}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+window.promptAdminNotificationAction = function(notifId, action) {
+  const notif = allAdminNotifsCache.find(n => n.id === notifId);
+  if (!notif) return;
+
+  pendingAdminActionData = { notifId, action, notif };
+
+  const modal = document.getElementById('adminActionConfirmModal');
+  const title = document.getElementById('confirmModalTitle');
+  const subtitle = document.getElementById('confirmModalSubtitle');
+  const icon = document.getElementById('confirmModalIcon');
+  const header = document.getElementById('confirmModalHeader');
+  const summaryBox = document.getElementById('confirmModalSummaryBox');
+  const explanation = document.getElementById('confirmModalExplanation');
+  const submitBtn = document.getElementById('confirmModalSubmitBtn');
+
+  if (action === 'mark_reviewed') {
+    if (title) title.innerText = 'Verify & Mark as Reviewed';
+    if (subtitle) subtitle.innerText = 'Confirm company details and dismiss from pending queue';
+    if (icon) icon.innerText = '✓';
+    if (header) {
+      header.style.background = '#f0fdf4';
+      header.style.borderBottom = '1px solid #bbf7d0';
+    }
+    if (explanation) {
+      explanation.innerHTML = 'Marking this entry as <strong>Reviewed</strong> verifies the company details and removes it from the pending review queue.';
+    }
+    if (submitBtn) {
+      submitBtn.innerText = '✓ Confirm & Dismiss';
+      submitBtn.style.background = '#059669';
+      submitBtn.onmouseover = () => { submitBtn.style.background = '#047857'; };
+      submitBtn.onmouseout = () => { submitBtn.style.background = '#059669'; };
+    }
+  } else {
+    // Revoke action
+    if (title) title.innerText = 'Revoke AM Company Access';
+    if (subtitle) subtitle.innerText = 'Remove company from Account Manager\'s active portfolio';
+    if (icon) icon.innerText = '🚫';
+    if (header) {
+      header.style.background = '#fef2f2';
+      header.style.borderBottom = '1px solid #fecaca';
+    }
+    if (explanation) {
+      explanation.innerHTML = 'This will <strong>remove the company</strong> from <strong>' + escapeQuotes(notif.am_name) + '\'s</strong> portfolio and dismiss it from the review list. Historical candidate transcripts will remain safe.';
+    }
+    if (submitBtn) {
+      submitBtn.innerText = '🚫 Confirm & Remove Access';
+      submitBtn.style.background = '#dc2626';
+      submitBtn.onmouseover = () => { submitBtn.style.background = '#b91c1c'; };
+      submitBtn.onmouseout = () => { submitBtn.style.background = '#dc2626'; };
+    }
+  }
+
+  if (summaryBox) {
+    summaryBox.innerHTML = `
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; font-size:12.5px;">
+        <div><span style="color:#64748b;">Company:</span> <strong style="color:#09090b;">${escapeQuotes(notif.company_name)}</strong></div>
+        <div><span style="color:#64748b;">Account Manager:</span> <strong style="color:#09090b;">${escapeQuotes(notif.am_name)}</strong></div>
+        <div style="grid-column: 1 / -1;"><span style="color:#64748b;">Target Role:</span> <strong style="color:#09090b;">${escapeQuotes(notif.role_title || 'Software Engineer')}</strong></div>
+      </div>
+    `;
+  }
+
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.closeAdminActionModal = function() {
+  const modal = document.getElementById('adminActionConfirmModal');
+  if (modal) modal.classList.add('hidden');
+  pendingAdminActionData = null;
+};
+
+window.executePendingAdminAction = async function() {
+  if (!pendingAdminActionData) return;
+  const { notifId, action, notif } = pendingAdminActionData;
+  const submitBtn = document.getElementById('confirmModalSubmitBtn');
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerText = '⏳ Processing...';
+  }
+
+  try {
+    const res = await fetch(`/api/admin/notifications/${notifId}/action`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ action })
+    });
+    if (!res.ok) throw new Error('Action failed to execute');
+
+    closeAdminActionModal();
+
+    // Optimistically update cache so item vanishes immediately
+    const targetIdx = allAdminNotifsCache.findIndex(n => n.id === notifId);
+    if (targetIdx !== -1) {
+      allAdminNotifsCache[targetIdx].review_status = (action === 'mark_reviewed') ? 'reviewed' : 'revoked';
+    }
+
+    if (action === 'mark_reviewed') {
+      showToast(`✓ Marked "${notif?.company_name || 'Company'}" as reviewed and dismissed from queue!`, 'success');
+    } else {
+      showToast(`🚫 Revoked "${notif?.company_name || 'Company'}" from ${notif?.am_name || 'AM'} and dismissed!`, 'warning');
+    }
+
+    // Refresh data and counters
+    await loadAdminNotifications();
+  } catch (err) {
+    showToast(`Action failed: ${err.message}`, 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+};
 

@@ -181,4 +181,55 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
+// GET /api/admin/notifications — List unreviewed/all AM company additions
+router.get('/notifications', async (req, res) => {
+  try {
+    const notifications = await db.all(
+      `SELECT n.*, c.elevator_pitch, c.hq_location
+       FROM admin_notifications n
+       LEFT JOIN companies c ON c.id = n.company_id
+       ORDER BY n.created_at DESC`
+    );
+    res.json({ notifications });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/notifications/:id/action — Perform Admin governance action
+router.post('/notifications/:id/action', async (req, res) => {
+  try {
+    const notificationId = req.params.id;
+    const { action, elevatorPitch, hqLocation } = req.body;
+
+    const notif = await db.get('SELECT * FROM admin_notifications WHERE id = ?', [notificationId]);
+    if (!notif) return res.status(404).json({ error: 'Notification record not found.' });
+
+    if (action === 'mark_reviewed') {
+      await db.run("UPDATE admin_notifications SET review_status = 'reviewed' WHERE id = ?", [notificationId]);
+    } else if (action === 'revoke_am') {
+      // Set status = 'archived' for that specific AM assignment
+      await db.run(
+        "UPDATE user_company_assignments SET status = 'archived' WHERE user_id = ? AND company_id = ?",
+        [notif.am_user_id, notif.company_id]
+      );
+      await db.run("UPDATE admin_notifications SET review_status = 'revoked' WHERE id = ?", [notificationId]);
+    } else if (action === 'edit_profile') {
+      await db.run(
+        'UPDATE companies SET elevator_pitch = ?, hq_location = ? WHERE id = ?',
+        [elevatorPitch || '', hqLocation || 'Bangalore', notif.company_id]
+      );
+      await db.run("UPDATE admin_notifications SET review_status = 'reviewed' WHERE id = ?", [notificationId]);
+    } else if (action === 'delete_global') {
+      await db.run('DELETE FROM companies WHERE id = ?', [notif.company_id]);
+      await db.run("UPDATE admin_notifications SET review_status = 'revoked' WHERE id = ?", [notificationId]);
+    }
+
+    const updated = await db.get('SELECT * FROM admin_notifications WHERE id = ?', [notificationId]);
+    res.json({ success: true, notification: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -120,6 +120,32 @@ async function initDb() {
         try { await pgPool.query('ALTER TABLE candidates ADD COLUMN IF NOT EXISTS ' + col + ' ' + def); } catch (_) {}
       }
 
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS admin_notifications (
+          id SERIAL PRIMARY KEY,
+          am_user_id INTEGER,
+          am_name TEXT,
+          company_id INTEGER,
+          company_name TEXT,
+          role_title TEXT,
+          review_status TEXT DEFAULT 'unreviewed',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS recruiter_personas (
+          id SERIAL PRIMARY KEY,
+          created_by_user_id INTEGER REFERENCES users(id),
+          persona_name TEXT NOT NULL,
+          recruiter_name TEXT NOT NULL,
+          voice_id TEXT DEFAULT 'rachel',
+          sample_transcripts_count INTEGER DEFAULT 1,
+          style_dna JSONB NOT NULL,
+          system_instructions TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      try { await pgPool.query("ALTER TABLE user_company_assignments ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'"); } catch (_) {}
+      try { await pgPool.query("ALTER TABLE companies ADD COLUMN IF NOT EXISTS created_by_am_id INTEGER"); } catch (_) {}
+
       await seedInitialDataPG(pgPool);
       console.log('[DB] Connected to PostgreSQL (Production / Supabase)');
       return pgPool;
@@ -178,7 +204,26 @@ async function initDb() {
       called_at TEXT DEFAULT (datetime('now')), completed_at TEXT,
       FOREIGN KEY (job_id) REFERENCES jobs(id)
     );
+    CREATE TABLE IF NOT EXISTS admin_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      am_user_id INTEGER, am_name TEXT, company_id INTEGER, company_name TEXT, role_title TEXT,
+      review_status TEXT DEFAULT 'unreviewed', created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS recruiter_personas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_by_user_id INTEGER,
+      persona_name TEXT NOT NULL,
+      recruiter_name TEXT NOT NULL,
+      voice_id TEXT DEFAULT 'rachel',
+      sample_transcripts_count INTEGER DEFAULT 1,
+      style_dna TEXT NOT NULL,
+      system_instructions TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
+
+  try { sqliteDb.run("ALTER TABLE user_company_assignments ADD COLUMN status TEXT DEFAULT 'active'"); } catch (_) {}
+  try { sqliteDb.run("ALTER TABLE companies ADD COLUMN created_by_am_id INTEGER"); } catch (_) {}
 
   const sqliteJobCols = [
     ['company_name',"TEXT DEFAULT 'Weekday'"],['location',"TEXT DEFAULT 'Hybrid / Onsite'"],
@@ -279,6 +324,77 @@ async function seedInitialDataPG(pool) {
 
       console.log(`✓ [DB Seed PG] Successfully batch-seeded ${companyIdMap.size} unique companies and ${roleCompanyIds.length} roles into PostgreSQL (Supabase).`);
     }
+
+    const notifRes = await pool.query('SELECT COUNT(*) as cnt FROM admin_notifications');
+    if (parseInt(notifRes.rows[0]?.cnt || 0) === 0) {
+      await pool.query(`
+        INSERT INTO admin_notifications (am_user_id, am_name, company_id, company_name, role_title, review_status)
+        VALUES
+          (2, 'Priya Sharma', 1, 'Weekday', 'Founding Chief of Staff / Product Ops', 'unreviewed'),
+          (3, 'Rohan Mehta', 2, '100ms', 'AI Engineer & WebRTC Systems', 'unreviewed'),
+          (2, 'Priya Sharma', 3, 'AtoB', 'Senior Fullstack Engineer', 'reviewed')
+      `);
+    }
+
+    const personaRes = await pool.query('SELECT COUNT(*) as cnt FROM recruiter_personas');
+    if (parseInt(personaRes.rows[0]?.cnt || 0) === 0) {
+      const suhradDna = JSON.stringify({
+        personaName: 'Suhrad (Founder & Tech Lead Style)',
+        executiveSummary: 'High-agency, casual yet razor-sharp interviewer who evaluates real production depth and founder mentality.',
+        rapportStyle: 'Immediate casual rapport, skips corporate fluff, focuses on what the candidate actually built.',
+        signaturePhrases: [
+          'Love that momentum.',
+          'Help me understand the architectural trade-offs you made there...',
+          'What broke in production when you scaled that, and how did you fix it?',
+          'Fair enough, let\'s peel back that layer.',
+          'If the founders gave you full ownership tomorrow, how would you approach this?'
+        ],
+        probingTechnique: 'Asks candidates about the hardest edge cases and trade-offs rather than textbook definitions.',
+        pacingAndFlow: 'Punchy 1-2 sentence questions with natural back-and-forth flow.',
+        pitchingCharisma: 'Pitches high-velocity growth, zero bureaucracy, and massive product ownership.',
+        sampleGreeting: 'Hey! Suhrad here from the team. Super excited to chat with you today about what you\'ve been building and how you might shape this role.'
+      });
+
+      const priyaDna = JSON.stringify({
+        personaName: 'Priya (Consultative Talent Partner)',
+        executiveSummary: 'Warm, empathetic, highly structured talent leader who makes candidates feel deeply valued while systematically assessing culture fit and problem-solving.',
+        rapportStyle: 'Warm and welcoming greeting, sets a collaborative and supportive atmosphere.',
+        signaturePhrases: [
+          'That makes total sense, thank you for sharing that context.',
+          'Let\'s double-click on how you collaborated with your team on this...',
+          'What was the biggest learning you took away from that experience?',
+          'I really appreciate that transparency.'
+        ],
+        probingTechnique: 'Empathetic curiosity; gently explores team dynamics, conflict resolution, and core technical contributions.',
+        pacingAndFlow: 'Smooth, steady, and conversational with thoughtful listening pauses.',
+        pitchingCharisma: 'Pitches culture, mentorship, career trajectory, and healthy work-life integration.',
+        sampleGreeting: 'Hi there! I\'m Priya. It\'s an absolute pleasure to connect with you today. We\'ll explore your background and answer any questions you have about the team.'
+      });
+
+      const neerjaDna = JSON.stringify({
+        personaName: 'Neerja (Fast-Track Tech Recruiter)',
+        executiveSummary: 'Crisp, articulate Bangalore tech corporate recruiter with authentic Indian cadence and rapid assessment.',
+        rapportStyle: 'Polished Indian corporate English greeting, setting expectations clearly.',
+        signaturePhrases: [
+          'Great to connect with you today.',
+          'Could you walk me through your hands-on contribution on that project?',
+          'Understood, let us move to the next technical pillar.',
+          'What is your current notice period and joining flexibility?'
+        ],
+        probingTechnique: 'Systematic verification of core tech stack, CTC expectations, and notice period constraints.',
+        pacingAndFlow: 'Crisp, structured, and goal-oriented.',
+        pitchingCharisma: 'Pitches top-tier compensation, scale, and tier-1 startup visibility.',
+        sampleGreeting: 'Hello! I am Neerja. I will be guiding your initial technical screening today. Let us get started whenever you are ready.'
+      });
+
+      await pool.query(`
+        INSERT INTO recruiter_personas (created_by_user_id, persona_name, recruiter_name, voice_id, style_dna, system_instructions)
+        VALUES
+          (1, 'Suhrad (Founder & Tech Lead Style)', 'Suhrad', 'adam', $1, 'YOU ARE ROLEPLAYING AS SUHRAD. You are high-energy, consultative, and sharp. Use signature phrases like \"Love that momentum\" and \"Help me understand the trade-offs\". When answers are vague, probe specifically for production edge cases without sounding aggressive.'),
+          (1, 'Priya (Consultative Talent Partner)', 'Priya', 'rachel', $2, 'YOU ARE ROLEPLAYING AS PRIYA. You are warm, empathetic, and consultative. Use signature phrases like \"That makes total sense\" and \"Let\'s double-click on that\". Create a psychologically safe space for the candidate while evaluating their rigor.'),
+          (1, 'Neerja (Fast-Track Tech Recruiter)', 'Neerja', 'neerja', $3, 'YOU ARE ROLEPLAYING AS NEERJA. You are crisp, professional, and structured. Maintain clear Indian English corporate cadence. Verify hands-on depth, notice period, and compensation alignment efficiently.')
+      `, [suhradDna, priyaDna, neerjaDna]);
+    }
   } catch (err) {
     console.warn('[DB Seed PG] Warning:', err.message);
   }
@@ -327,6 +443,88 @@ async function seedInitialDataSQLite() {
       }
       sqliteDb.run('COMMIT');
       console.log(`✓ Seeded ${companyMap.size} unique companies and ${seedPairs.length} roles into SQLite.`);
+    }
+
+    // Seed initial admin_notifications if empty so AM Additions activity table has initial records
+    const notifCount = sqliteDb.exec('SELECT COUNT(*) FROM admin_notifications')[0]?.values[0]?.[0] || 0;
+    if (parseInt(notifCount) === 0) {
+      sqliteDb.run(
+        "INSERT INTO admin_notifications (am_user_id, am_name, company_id, company_name, role_title, review_status) VALUES (?, ?, ?, ?, ?, 'unreviewed')",
+        [2, 'Priya Sharma', 1, 'Weekday', 'Founding Chief of Staff / Product Ops']
+      );
+      sqliteDb.run(
+        "INSERT INTO admin_notifications (am_user_id, am_name, company_id, company_name, role_title, review_status) VALUES (?, ?, ?, ?, ?, 'unreviewed')",
+        [3, 'Rohan Mehta', 2, '100ms', 'AI Engineer & WebRTC Systems']
+      );
+      sqliteDb.run(
+        "INSERT INTO admin_notifications (am_user_id, am_name, company_id, company_name, role_title, review_status) VALUES (?, ?, ?, ?, ?, 'reviewed')",
+        [2, 'Priya Sharma', 3, 'AtoB', 'Senior Fullstack Engineer']
+      );
+    }
+
+    const personaCount = sqliteDb.exec('SELECT COUNT(*) FROM recruiter_personas')[0]?.values[0]?.[0] || 0;
+    if (parseInt(personaCount) === 0) {
+      const suhradDna = JSON.stringify({
+        personaName: 'Suhrad (Founder & Tech Lead Style)',
+        executiveSummary: 'High-agency, casual yet razor-sharp interviewer who evaluates real production depth and founder mentality.',
+        rapportStyle: 'Immediate casual rapport, skips corporate fluff, focuses on what the candidate actually built.',
+        signaturePhrases: [
+          'Love that momentum.',
+          'Help me understand the architectural trade-offs you made there...',
+          'What broke in production when you scaled that, and how did you fix it?',
+          'Fair enough, let\'s peel back that layer.',
+          'If the founders gave you full ownership tomorrow, how would you approach this?'
+        ],
+        probingTechnique: 'Asks candidates about the hardest edge cases and trade-offs rather than textbook definitions.',
+        pacingAndFlow: 'Punchy 1-2 sentence questions with natural back-and-forth flow.',
+        pitchingCharisma: 'Pitches high-velocity growth, zero bureaucracy, and massive product ownership.',
+        sampleGreeting: 'Hey! Suhrad here from the team. Super excited to chat with you today about what you\'ve been building and how you might shape this role.'
+      });
+
+      const priyaDna = JSON.stringify({
+        personaName: 'Priya (Consultative Talent Partner)',
+        executiveSummary: 'Warm, empathetic, highly structured talent leader who makes candidates feel deeply valued while systematically assessing culture fit and problem-solving.',
+        rapportStyle: 'Warm and welcoming greeting, sets a collaborative and supportive atmosphere.',
+        signaturePhrases: [
+          'That makes total sense, thank you for sharing that context.',
+          'Let\'s double-click on how you collaborated with your team on this...',
+          'What was the biggest learning you took away from that experience?',
+          'I really appreciate that transparency.'
+        ],
+        probingTechnique: 'Empathetic curiosity; gently explores team dynamics, conflict resolution, and core technical contributions.',
+        pacingAndFlow: 'Smooth, steady, and conversational with thoughtful listening pauses.',
+        pitchingCharisma: 'Pitches culture, mentorship, career trajectory, and healthy work-life integration.',
+        sampleGreeting: 'Hi there! I\'m Priya. It\'s an absolute pleasure to connect with you today. We\'ll explore your background and answer any questions you have about the team.'
+      });
+
+      const neerjaDna = JSON.stringify({
+        personaName: 'Neerja (Fast-Track Tech Recruiter)',
+        executiveSummary: 'Crisp, articulate Bangalore tech corporate recruiter with authentic Indian cadence and rapid assessment.',
+        rapportStyle: 'Polished Indian corporate English greeting, setting expectations clearly.',
+        signaturePhrases: [
+          'Great to connect with you today.',
+          'Could you walk me through your hands-on contribution on that project?',
+          'Understood, let us move to the next technical pillar.',
+          'What is your current notice period and joining flexibility?'
+        ],
+        probingTechnique: 'Systematic verification of core tech stack, CTC expectations, and notice period constraints.',
+        pacingAndFlow: 'Crisp, structured, and goal-oriented.',
+        pitchingCharisma: 'Pitches top-tier compensation, scale, and tier-1 startup visibility.',
+        sampleGreeting: 'Hello! I am Neerja. I will be guiding your initial technical screening today. Let us get started whenever you are ready.'
+      });
+
+      sqliteDb.run(
+        "INSERT INTO recruiter_personas (created_by_user_id, persona_name, recruiter_name, voice_id, style_dna, system_instructions) VALUES (?, ?, ?, ?, ?, ?)",
+        [1, 'Suhrad (Founder & Tech Lead Style)', 'Suhrad', 'adam', suhradDna, 'YOU ARE ROLEPLAYING AS SUHRAD. You are high-energy, consultative, and sharp. Use signature phrases like "Love that momentum" and "Help me understand the trade-offs". When answers are vague, probe specifically for production edge cases without sounding aggressive.']
+      );
+      sqliteDb.run(
+        "INSERT INTO recruiter_personas (created_by_user_id, persona_name, recruiter_name, voice_id, style_dna, system_instructions) VALUES (?, ?, ?, ?, ?, ?)",
+        [1, 'Priya (Consultative Talent Partner)', 'Priya', 'rachel', priyaDna, 'YOU ARE ROLEPLAYING AS PRIYA. You are warm, empathetic, and consultative. Use signature phrases like "That makes total sense" and "Let\'s double-click on that". Create a psychologically safe space for the candidate while evaluating their rigor.']
+      );
+      sqliteDb.run(
+        "INSERT INTO recruiter_personas (created_by_user_id, persona_name, recruiter_name, voice_id, style_dna, system_instructions) VALUES (?, ?, ?, ?, ?, ?)",
+        [1, 'Neerja (Fast-Track Tech Recruiter)', 'Neerja', 'neerja', neerjaDna, 'YOU ARE ROLEPLAYING AS NEERJA. You are crisp, professional, and structured. Maintain clear Indian English corporate cadence. Verify hands-on depth, notice period, and compensation alignment efficiently.']
+      );
     }
   } catch (err) {
     console.warn('[DB Seed SQLite] Warning:', err.message);

@@ -71,13 +71,36 @@ router.get('/by-pair', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Company ID and Role title are required.' });
     }
 
-    const job = await db.get(
-      'SELECT * FROM jobs WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_by_user_id = ? LIMIT 1',
-      [companyId, roleTitle.trim(), user.id]
+    const cleanTitle = roleTitle.trim();
+
+    // 1. Try to find user's customized job first
+    let job = await db.get(
+      'SELECT * FROM jobs WHERE company_id = ? AND LOWER(TRIM(title)) = LOWER(?) AND created_by_user_id = ? LIMIT 1',
+      [companyId, cleanTitle, user.id]
     );
 
+    // 2. Fallback to master seeded job for this company & role
+    if (!job) {
+      job = await db.get(
+        'SELECT * FROM jobs WHERE company_id = ? AND LOWER(TRIM(title)) = LOWER(?) ORDER BY id ASC LIMIT 1',
+        [companyId, cleanTitle]
+      );
+    }
+
+    // 3. Fallback to fuzzy substring title match
+    if (!job) {
+      job = await db.get(
+        'SELECT * FROM jobs WHERE company_id = ? AND (LOWER(title) LIKE LOWER(?) OR LOWER(?) LIKE LOWER(title)) ORDER BY id ASC LIMIT 1',
+        [companyId, `%${cleanTitle}%`, `%${cleanTitle}%`]
+      );
+    }
+
     if (job && job.custom_questions) {
-      try { job.custom_questions = JSON.parse(job.custom_questions); } catch (_) {}
+      try {
+        if (typeof job.custom_questions === 'string') {
+          job.custom_questions = JSON.parse(job.custom_questions);
+        }
+      } catch (_) {}
     }
 
     res.json(job || null);
@@ -222,6 +245,7 @@ router.post('/', authenticateToken, async (req, res) => {
       languageMode,
       durationTarget,
       voiceId,
+      recruiterName,
       customQuestions,
       jdText,
       requirements
@@ -235,7 +259,54 @@ router.post('/', authenticateToken, async (req, res) => {
       ? customQuestions 
       : JSON.stringify(customQuestions || []);
 
-    const cId = parseInt(companyId) || 1;
+    const cleanCompName = (companyName || '').trim();
+    let cId = parseInt(companyId) || null;
+    let compRecord = null;
+    if (cId) {
+      compRecord = await db.get('SELECT * FROM companies WHERE id = ?', [cId]);
+    }
+    if (!compRecord && cleanCompName) {
+      compRecord = await db.get('SELECT * FROM companies WHERE LOWER(name) = LOWER(?)', [cleanCompName]);
+      if (!compRecord) {
+        const { lastInsertRowid } = await db.run(
+          'INSERT INTO companies (name, elevator_pitch, hq_location, created_by_am_id) VALUES (?, ?, ?, ?)',
+          [cleanCompName, '', (location || 'Bangalore').trim(), user.id]
+        );
+        compRecord = await db.get('SELECT * FROM companies WHERE id = ?', [lastInsertRowid]);
+      }
+    }
+
+    cId = compRecord ? compRecord.id : (cId || 1);
+
+    // Auto-assign company to current AM & record admin notification
+    if (compRecord && user.role !== 'admin') {
+      const existingAssignment = await db.get(
+        'SELECT id FROM user_company_assignments WHERE user_id = ? AND company_id = ?',
+        [user.id, compRecord.id]
+      );
+      if (!existingAssignment) {
+        await db.run(
+          "INSERT INTO user_company_assignments (user_id, company_id, status) VALUES (?, ?, 'active')",
+          [user.id, compRecord.id]
+        );
+        await db.run(
+          "INSERT INTO admin_notifications (am_user_id, am_name, company_id, company_name, role_title, review_status) VALUES (?, ?, ?, ?, ?, 'unreviewed')",
+          [user.id, user.name || 'Account Manager', compRecord.id, compRecord.name, title.trim()]
+        );
+      }
+    }
+
+    // Auto-create role in company_roles
+    if (compRecord && title && title.trim()) {
+      const existingRole = await db.get(
+        'SELECT id FROM company_roles WHERE company_id = ? AND LOWER(role_title) = LOWER(?)',
+        [compRecord.id, title.trim().toLowerCase()]
+      );
+      if (!existingRole) {
+        await db.run('INSERT INTO company_roles (company_id, role_title) VALUES (?, ?)', [compRecord.id, title.trim()]);
+      }
+    }
+
     const cleanJd = (jdText || 'Standard screening JD').trim();
 
     // Check if an existing config exists for this AM + Company + Role
@@ -243,11 +314,6 @@ router.post('/', authenticateToken, async (req, res) => {
       'SELECT id FROM jobs WHERE company_id = ? AND LOWER(title) = LOWER(?) AND created_by_user_id = ?',
       [cId, title.trim(), user.id]
     );
-
-    const {
-      companyId, companyName, title, location, maxNoticeDays, techStack, targetCpa,
-      tone, languageMode, durationTarget, voiceId, recruiterName, customQuestions, jdText, requirements
-    } = req.body;
 
     let jobId;
     if (existing) {

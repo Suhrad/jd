@@ -92,7 +92,7 @@ async function refineSingleCategoryQuestion({ category, currentQuestion, jdText,
   if (groqKey) {
     endpoint = 'https://api.groq.com/openai/v1/chat/completions';
     apiKey   = groqKey;
-    model    = 'llama-3.3-70b-versatile';
+    model    = 'openai/gpt-oss-120b';
   } else if (openRouterKey) {
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
     apiKey   = openRouterKey;
@@ -152,7 +152,7 @@ async function generateNewCategoryCard({ prompt, companyName, jobTitle, techStac
   const openAiKey = process.env.OPENAI_API_KEY;
   const apiKey   = groqKey || openAiKey;
   const endpoint = groqKey ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
-  const model    = groqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+  const model    = groqKey ? 'openai/gpt-oss-120b' : 'gpt-4o-mini';
 
   if (apiKey) {
     try {
@@ -210,7 +210,7 @@ async function generateInterviewQuestions({ jdText, companyName, jobTitle, techS
   if (groqKey) {
     endpoint = 'https://api.groq.com/openai/v1/chat/completions';
     apiKey   = groqKey;
-    model    = 'llama-3.3-70b-versatile';
+    model    = 'openai/gpt-oss-120b';
   } else if (openRouterKey) {
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
     apiKey   = openRouterKey;
@@ -308,7 +308,7 @@ async function parseJdToParameters(jdText) {
   if (groqKey) {
     endpoint = 'https://api.groq.com/openai/v1/chat/completions';
     apiKey   = groqKey;
-    model    = 'llama-3.3-70b-versatile';
+    model    = 'openai/gpt-oss-120b';
   } else if (openRouterKey) {
     endpoint = 'https://openrouter.ai/api/v1/chat/completions';
     apiKey   = openRouterKey;
@@ -344,13 +344,13 @@ If a parameter is not mentioned, use the specified fallback/default value.
 
 Expected JSON output format:
 {
-  "companyName": "extracted company name, default to 'Weekday' if not found",
-  "title": "extracted job title, default to '' if not found",
-  "location": "extracted location, e.g. 'Indiranagar, Bangalore (5 Days WFO)' or 'Remote'. default to 'Hybrid / Onsite' if not found",
+  "companyName": "extracted company name (e.g. 'Weekday', '100ms', 'Swiggy'). default to 'Weekday' if not found",
+  "title": "extracted job title. If no explicit title is written, infer the best concise professional role title from the responsibilities described (e.g. 'Founder\'s Office / Product & Ops', 'Software Engineer', 'Chief of Staff'). Never return empty string.",
+  "location": "extracted location or work setup (e.g. 'Bangalore (Onsite)', 'Remote', 'Hybrid / Onsite'). default to 'Hybrid / Onsite' if not found",
   "maxNoticeDays": "extracted max notice period in days as string, e.g. '30', '60', '90' or 'Negotiable'. default to '30' if not found",
-  "techStack": "extracted core technologies as comma-separated list, e.g. 'React, Node.js, Python'. default to '' if not found",
+  "techStack": "extracted technologies or core functional skill areas as comma-separated list (e.g. 'Coding, Product, Data Analysis, Operations' or 'React, Node.js, Python'). default to '' if not found",
   "targetCpa": "extracted target salary budget or fixed CTC, e.g. 'INR 12L - 15L Fixed' or 'Negotiable'. default to 'Negotiable' if not found",
-  "tone": "must be one of: 'warm', 'rigorous', 'executive', 'startup'. default to 'warm' if not found",
+  "tone": "must be one of: 'warm', 'rigorous', 'executive', 'startup'. default to 'startup' if startup/growth context, otherwise 'warm'",
   "voiceId": "must be one of: 'shimmer', 'alloy', 'fable', 'onyx'. Choose based on the target role/company: 'shimmer' for warm/collaborative, 'alloy' for general/engineering, 'fable' for customer-facing/expressive, 'onyx' for mature/deep voice. default to 'shimmer' if not found"
 }
 
@@ -417,7 +417,7 @@ async function extractCandidateBio(resumeText, jdText) {
   const openAiKey = process.env.OPENAI_API_KEY;
   const apiKey    = groqKey || openAiKey;
   const endpoint  = groqKey ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
-  const model     = groqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+  const model     = groqKey ? 'openai/gpt-oss-120b' : 'gpt-4o-mini';
 
   if (!apiKey) return fallback;
 

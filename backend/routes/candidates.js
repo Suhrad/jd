@@ -40,7 +40,7 @@ async function analyzeTranscriptWithLLM(transcript, candidate) {
   const openAiKey = process.env.OPENAI_API_KEY;
   const apiKey   = groqKey || openAiKey;
   const endpoint = groqKey ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
-  const model    = groqKey ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini';
+  const model    = groqKey ? 'openai/gpt-oss-120b' : 'gpt-4o-mini';
 
   if (apiKey) {
     try {
@@ -134,31 +134,35 @@ router.get('/', authenticateToken, async (req, res) => {
       SELECT c.*, j.title AS job_title, j.company_name, comp.name AS comp_name
       FROM candidates c
       LEFT JOIN jobs j ON c.job_id = j.id
-      LEFT JOIN companies comp ON c.company_id = comp.id
+      LEFT JOIN companies comp ON (c.company_id = comp.id OR j.company_id = comp.id)
     `;
     const params = [];
 
     if (companyId) {
-      query += ` WHERE c.company_id = ?`;
-      params.push(companyId);
+      query += ` WHERE (c.company_id = ? OR j.company_id = ?)`;
+      params.push(companyId, companyId);
     } else if (user.role !== 'admin') {
-      // Account managers see candidates for their assigned companies or candidates they created
-      query += ` WHERE c.account_manager_id = ? OR c.company_id IN (
+      query += ` WHERE (c.account_manager_id = ? OR c.created_by_user_id = ? OR c.company_id IN (
         SELECT company_id FROM user_company_assignments WHERE user_id = ?
-      )`;
-      params.push(user.id, user.id);
+      ) OR j.company_id IN (
+        SELECT company_id FROM user_company_assignments WHERE user_id = ?
+      ))`;
+      params.push(user.id, user.id, user.id, user.id);
     }
 
-    query += ` ORDER BY c.called_at DESC`;
+    query += ` ORDER BY c.id DESC`;
 
     const candidates = await db.all(query, params);
     candidates.forEach(c => {
-      if (c.call_health) {
+      if (c.call_health_json) {
+        try { c.call_health = JSON.parse(c.call_health_json); } catch (_) {}
+      } else if (c.call_health && typeof c.call_health === 'string') {
         try { c.call_health = JSON.parse(c.call_health); } catch (_) {}
       }
     });
-    res.json(candidates);
+    res.json(candidates || []);
   } catch (err) {
+    console.error('[GET /api/candidates Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -261,8 +265,10 @@ router.post('/', authenticateToken, async (req, res) => {
       candidateBio:    rawBio,
       bioSummary:      extractedBio.bio_summary,
       jdMatch:         extractedBio.jd_match,
-      voiceId:         job.voice_id || 'shimmer',
-      recruiterName:   job.recruiter_name || 'Maya',
+      voiceId:         req.body.voiceId || job.voice_id || 'rachel',
+      recruiterName:   req.body.recruiterName || job.recruiter_name || 'Maya',
+      clonedPersonaInstructions: req.body.clonedPersonaInstructions || '',
+      clonedPersonaDna: req.body.clonedPersonaDna || null,
       customQuestions: customQuestions,
       jdText:          job.jd_text,
       requirements:    job.requirements

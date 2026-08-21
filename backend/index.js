@@ -32,6 +32,8 @@ app.use('/api/companies',  require('./routes/companies'));
 app.use('/api/admin',      require('./routes/admin'));
 app.use('/api/jobs',       require('./routes/jobs'));
 app.use('/api/candidates', require('./routes/candidates'));
+app.use('/api/personas',   require('./routes/personas'));
+app.use('/api/voice',      require('./routes/voice'));
 
 // Serve the Vapi public key safely (key lives in .env, never in frontend code)
 app.get('/api/config', (req, res) => {

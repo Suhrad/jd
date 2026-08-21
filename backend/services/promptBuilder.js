@@ -91,11 +91,18 @@ function buildSystemPrompt(params) {
   const toneInstruction = TONE_INSTRUCTIONS[tone] || TONE_INSTRUCTIONS.warm;
   const langInstruction = LANGUAGE_DIRECTIVES[languageMode] || LANGUAGE_DIRECTIVES['en-IN'];
 
-  // Determine persona phrasing based on voiceId
+  // Determine persona phrasing based on voiceId or custom cloned recruiter persona
   let personaKey = 'maya';
-  if (['onyx', 'echo'].includes(voiceId)) personaKey = 'david';
+  if (['onyx', 'echo', 'adam'].includes(voiceId)) personaKey = 'david';
   else if (['alloy'].includes(voiceId)) personaKey = 'alex';
-  const personaInstruction = PERSONA_DIRECTIVES[personaKey];
+  let personaInstruction = PERSONA_DIRECTIVES[personaKey] || PERSONA_DIRECTIVES.maya;
+
+  if (params.clonedPersonaInstructions && params.clonedPersonaInstructions.trim()) {
+    personaInstruction = `CLONED RECRUITER STYLE INSTRUCTIONS (${rName.toUpperCase()} DNA):\n${params.clonedPersonaInstructions.trim()}`;
+    if (params.clonedPersonaDna && Array.isArray(params.clonedPersonaDna.signaturePhrases) && params.clonedPersonaDna.signaturePhrases.length > 0) {
+      personaInstruction += `\nSIGNATURE TRANSITIONS & CATCHPHRASES TO NATURALLY WEAVE IN:\n${params.clonedPersonaDna.signaturePhrases.map(p => `- "${p}"`).join('\n')}`;
+    }
+  }
 
   const structuredOpener = buildStructuredOpener(params);
 
@@ -255,8 +262,82 @@ function buildAnalysisPlan() {
   };
 }
 
+function resolveVapiVoice(voiceKey) {
+  const v = (voiceKey || 'rachel').toLowerCase().trim();
+
+  // ── ElevenLabs Voices (Ultra-Realistic) ──────────────────────────────────
+  const elevenLabsVoices = {
+    // Flagship Female
+    'rachel':        { provider: '11labs', voiceId: '21m00Tcm4TlvDq8ikWAM', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'sarah_11':      { provider: '11labs', voiceId: 'EXAVITQu4vr4xnSDxMaL', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'jessica':       { provider: '11labs', voiceId: 'cgSgspJ2msm6clMCkdW9', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'alice':         { provider: '11labs', voiceId: 'Xb7hH8MSUJpSbSDYk0k2', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'lily':          { provider: '11labs', voiceId: 'pFZP5JQG7iQjIQuC4Bku', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    // Flagship Male
+    'adam':          { provider: '11labs', voiceId: 'pNInz6obpgDQGcFmaJgB', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'brian':         { provider: '11labs', voiceId: 'nPczCjzI2devNBz1zQrb', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'george':        { provider: '11labs', voiceId: 'JBFqnCBsd6RMkjVDRZzb', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 },
+    'callum':        { provider: '11labs', voiceId: 'N2lVS1w4EtoT3dr4eOWO', model: 'eleven_turbo_v2_5', stability: 0.5, similarityBoost: 0.75 }
+  };
+
+  if (elevenLabsVoices[v]) return elevenLabsVoices[v];
+
+  // ── Azure Neural Voices (Authentic Indian Accents & US) ───────────────────
+  const azureVoices = {
+    // Indian English (en-IN)
+    'neerja':        { provider: 'azure', voiceId: 'en-IN-NeerjaNeural' }, // Indian Female (Executive/Articulate)
+    'kavya':         { provider: 'azure', voiceId: 'en-IN-KavyaNeural' },  // Indian Female (Conversational/Friendly)
+    'ananya':        { provider: 'azure', voiceId: 'en-IN-AnanyaNeural' }, // Indian Female (Polished/Formal)
+    'aashi':         { provider: 'azure', voiceId: 'en-IN-AashiNeural' },  // Indian Female (Expressive/Engaging)
+    'prabhat':       { provider: 'azure', voiceId: 'en-IN-PrabhatNeural' }, // Indian Male (Deep/Authoritative)
+    'aarav':         { provider: 'azure', voiceId: 'en-IN-AaravNeural' },   // Indian Male (Young/Energetic)
+    'rehaan':        { provider: 'azure', voiceId: 'en-IN-RehaanNeural' },  // Indian Male (Smooth/Consultative)
+    // Hindi / Hinglish (hi-IN)
+    'swara':         { provider: 'azure', voiceId: 'hi-IN-SwaraNeural' },   // Hindi/Hinglish Female (Natural)
+    'madhur':        { provider: 'azure', voiceId: 'hi-IN-MadhurNeural' },  // Hindi/Hinglish Male (Professional)
+    // US Voices
+    'jenny':         { provider: 'azure', voiceId: 'en-US-JennyNeural' },   // US Female
+    'guy':           { provider: 'azure', voiceId: 'en-US-GuyNeural' }      // US Male
+  };
+
+  if (azureVoices[v]) return azureVoices[v];
+
+  // ── Cartesia Sonic (Ultra-Fast ~100ms) ───────────────────────────────────
+  const cartesiaVoices = {
+    'cartesia_katie': { provider: 'cartesia', voiceId: '79a125e8-cd45-4c13-8a67-188112f4dd22', model: 'sonic-english' },
+    'cartesia_sarah': { provider: 'cartesia', voiceId: '694f12bc-c215-4660-a152-4467c6999a03', model: 'sonic-english' },
+    'cartesia_mason': { provider: 'cartesia', voiceId: '829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30', model: 'sonic-english' }
+  };
+
+  if (cartesiaVoices[v]) return cartesiaVoices[v];
+
+  // ── Deepgram Aura ────────────────────────────────────────────────────────
+  const deepgramVoices = {
+    'asteria':       { provider: 'deepgram', voiceId: 'asteria' },
+    'luna':          { provider: 'deepgram', voiceId: 'luna' },
+    'orion':         { provider: 'deepgram', voiceId: 'orion' },
+    'zeus':          { provider: 'deepgram', voiceId: 'zeus' }
+  };
+
+  if (deepgramVoices[v]) return deepgramVoices[v];
+
+  // ── OpenAI Standard TTS Fallbacks ────────────────────────────────────────
+  const openAiVoices = ['shimmer', 'onyx', 'fable', 'nova', 'echo', 'alloy'];
+  if (openAiVoices.includes(v)) {
+    return { provider: 'openai', voiceId: v };
+  }
+
+  // Raw Voice ID string fallback
+  if (v.length > 15) {
+    return { provider: '11labs', voiceId: voiceKey, model: 'eleven_turbo_v2_5' };
+  }
+
+  return { provider: '11labs', voiceId: '21m00Tcm4TlvDq8ikWAM', model: 'eleven_turbo_v2_5' }; // Default to Rachel
+}
+
 function buildVapiAssistantConfig(params) {
   const systemPrompt = buildSystemPrompt(params);
+  const voiceConfig = resolveVapiVoice(params.voiceId);
 
   return {
     transcriber: {
@@ -274,10 +355,7 @@ function buildVapiAssistantConfig(params) {
       temperature: 0.4,
       maxTokens: 180
     },
-    voice: {
-      provider: 'openai',
-      voiceId: params.voiceId || 'shimmer'
-    },
+    voice: voiceConfig,
     firstMessage: buildStructuredOpener(params),
     endCallMessage: `Thanks for the time. You'll hear back over WhatsApp within 24 hours.`,
     endCallFunctionEnabled: true,
@@ -297,4 +375,4 @@ function buildVapiAssistantConfig(params) {
   };
 }
 
-module.exports = { buildVapiAssistantConfig };
+module.exports = { buildVapiAssistantConfig, resolveVapiVoice };
